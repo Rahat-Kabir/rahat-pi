@@ -14,6 +14,7 @@ import { AppDoc } from './state.js';
 import { buildModels, capModelOutput, budgetCompactionModels } from './models.js';
 import { type Config, crashAt } from '../config.js';
 import { MemoryIndex } from '../extensions/memory.js';
+import { readStoppedTasks } from './health.js';
 import { FixtureCalendar } from '../extensions/calendar.js';
 import { buildTools } from '../extensions/tools.js';
 import { buildWebFetchTool, WebResearch } from '../extensions/web-research.js';
@@ -28,7 +29,8 @@ import { approveAction, editAction } from '../executor/actions.js';
 
 export type Command =
   | { name: 'chat'; message: string; requestId?: string }
-  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' }
+  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' | 'health' }
+  | { name: 'retry'; taskId: number }
   | { name: 'forget'; id: string }
   | { name: 'approve' | 'reject'; id: string; payloadHash?: string }
   | { name: 'edit'; id: string; recipient: string; body: string };
@@ -255,6 +257,10 @@ export class App {
         return this.listMemories();
       case 'forget':
         return this.forgetMemory(command.id);
+      case 'health':
+        return { stoppedTasks: await this.stoppedTasks() };
+      case 'retry':
+        return this.retryStoppedTask(command.taskId);
       case 'state':
         return await this.harness.snapshot(AppDoc, context);
       case 'outbox':
@@ -280,6 +286,27 @@ export class App {
       subagents[subagent.status] = (subagents[subagent.status] ?? 0) + 1;
     }
     return { ...stats, subagents };
+  }
+  async stoppedTasks() {
+    const view = await this.root.viewState(context);
+    try {
+      const liveTools = (view.value.docs['pi.live'] as { tools?: { callId: string; name: string }[] } | undefined)?.tools ?? [];
+      return await readStoppedTasks(this.harness, this.root.id, liveTools);
+    } finally {
+      view.dispose();
+    }
+  }
+  // Pi's retryTask quietly ignores a task that is not parked, so the owner gets an explicit answer instead.
+  private async retryStoppedTask(taskId: number) {
+    const stoppedTask = (await this.stoppedTasks()).find(task => task.taskId === taskId);
+    if (!stoppedTask) {
+      throw new Error('No stopped task with that id');
+    }
+    if (!stoppedTask.canRetry) {
+      throw new Error(`Cannot retry: the task is blocked (${stoppedTask.reason}), not parked after crashes`);
+    }
+    await this.harness.retryTask(taskId as TaskId, context);
+    return { retried: taskId, label: stoppedTask.label };
   }
   // Newest first, so the owner sees what was just remembered at the top.
   async listMemories() {

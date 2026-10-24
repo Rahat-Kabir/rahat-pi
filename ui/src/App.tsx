@@ -6,6 +6,7 @@ import { SignIn } from './features/connection/SignIn';
 import { ChatView } from './features/chat/ChatView';
 import { MemoriesView } from './features/memories/MemoriesView';
 import { ApprovalsBanner } from './features/approvals/ApprovalsBanner';
+import { StoppedTasksBanner } from './features/health/StoppedTasksBanner';
 import { ApprovalsPanel } from './features/approvals/ApprovalsPanel';
 import { waitingCount } from './features/approvals/approvals';
 
@@ -54,6 +55,7 @@ export function App() {
       <Header connected={signInStatus === 'signedIn' && connected} />
       {signInStatus === 'signedOut' && <SignIn onSignedIn={() => setSignInStatus('signedIn')} />}
       {signInStatus === 'checking' && <p className="p-8 text-center text-sm text-slate-500">Connecting to Rahat-PI…</p>}
+      {signInStatus === 'signedIn' && state && <StoppedTasksBanner stoppedTasks={state.stoppedTasks} />}
       {signInStatus === 'signedIn' && state && (
         <ApprovalsBanner waiting={waiting} onReview={() => approvals.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
       )}

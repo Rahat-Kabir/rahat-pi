@@ -12,6 +12,11 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
 
+### Stopped tasks you can see and retry (2026-10-24)
+Pi 1.4 parks a task after 5 crashes in a row, which silently stops a routine or leaves chat stuck; before, only `stats` counted them.
+New `health` and `retry <taskId>` commands, `stoppedTasks` in the live state, `POST /api/tasks/retry`, and a red app banner with Retry.
+Verified: a real SIGKILL crash loop parks `memory_write`, `health` lists it, `retry` completes it once; label, refusal, and web tests; full offline suite and app build.
+
 ### Memories screen (2026-10-24)
 Owner commands `memories` (newest first) and `forget <id>`; memories ride the live state, and `POST /api/memories/forget` forgets one behind sign-in.
 The app has a Chat | Memories switch; each memory shows its source and save time, and Forget asks for confirmation first. Past chat that mentions a forgotten fact is not rewritten.

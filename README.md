@@ -148,6 +148,7 @@ npm run cli -- outbox           # the fake outbox shows one sent message
 | `npm run cli -- memories` / `forget <id>` | List what the agent remembers; forget one fact |
 | `npm run cli -- compact` | Summarize older chat history now |
 | `npm run cli -- stats [--json]` | Spend and health statistics |
+| `npm run cli -- health` / `retry <taskId>` | Tasks that stopped after repeated crashes; run one again |
 | `npm run cli -- stop` | Kill switch: stops the service and cancels running work |
 | `npm run demo` | Free offline walkthrough of memory, approvals, and send-once |
 | `npm run eval` | 15 free offline scenario checks with a JSON report |

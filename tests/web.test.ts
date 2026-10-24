@@ -9,6 +9,7 @@ import * as modelSetup from '../src/harness/models.js';
 import { configFromEnv } from '../src/config.js';
 import { startWebServer } from '../src/web/server.js';
 import { renderPage } from '../src/web/page.js';
+import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import type { WebState } from '../src/web/state.js';
 import { offlineConfig, temporaryData, toolMessage } from './helpers.js';
 
@@ -303,6 +304,33 @@ describe('local web UI', () => {
         events.close();
       }
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('shows stopped tasks in the live state and retries one only when signed in', async () => {
+    const fixture = await webFixture();
+    try {
+      await fixture.app.dispatch({ name: 'chat', message: toolMessage('memory_write', { content: 'Likes tea', source: 'owner' }) });
+      const [someTask] = (await fixture.app.harness.commit(transaction => transaction.scanTasks({}, 1), context)).items;
+      vi.spyOn(fixture.app.harness, 'inspect').mockResolvedValue({
+        scheduling: 'running', submissions: [], tasks: [{ record: someTask as never, state: { kind: 'blocked', reason: 'restart_limit' } }],
+      });
+      vi.spyOn(fixture.app.harness, 'retryTask').mockResolvedValue();
+      expect((await readState(fixture.baseUrl, fixture.token)).stoppedTasks).toMatchObject([
+        { taskId: someTask.id, reason: 'restart_limit', canRetry: true },
+      ]);
+
+      expect((await post(fixture.baseUrl, '', '/api/tasks/retry', { taskId: someTask.id })).status).toBe(401);
+      for (const invalidTaskId of ['1', 0, 1.5, -2, null]) {
+        expect((await post(fixture.baseUrl, fixture.token, '/api/tasks/retry', { taskId: invalidTaskId })).status).toBe(400);
+      }
+      expect((await post(fixture.baseUrl, fixture.token, '/api/tasks/retry', { taskId: someTask.id + 1000 })).status).toBe(409);
+      const retryResponse = await post(fixture.baseUrl, fixture.token, '/api/tasks/retry', { taskId: someTask.id });
+      expect(retryResponse.status).toBe(200);
+      expect(await retryResponse.json()).toMatchObject({ retried: someTask.id });
+    } finally {
+      vi.restoreAllMocks();
       await fixture.cleanup();
     }
   });

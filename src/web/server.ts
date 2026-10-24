@@ -229,6 +229,16 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
       sendJson(response, 200, result);
       return;
     }
+    if (path === '/api/tasks/retry') {
+      const taskId = body.taskId;
+      if (typeof taskId !== 'number' || !Number.isSafeInteger(taskId) || taskId <= 0) {
+        throw new HttpError(400, 'Invalid taskId');
+      }
+      sendJson(response, 200, await app.dispatch({ name: 'retry', taskId }));
+      // Retrying changes a task record, not the conversation or AppDoc, so no watch would send the new state.
+      void refresh();
+      return;
+    }
     if (path === '/api/memories/forget') {
       const id = requireString(body, 'id', 200);
       sendJson(response, 200, await app.dispatch({ name: 'forget', id }));

@@ -83,6 +83,9 @@ Safe crash recovery and trustworthy approvals are the main constraint.
   HttpOnly, SameSite=Strict cookie. Every data route, reads included, needs it
   (or `X-Rahat-Token`). Page scripts never hold the token, and deleting
   `data/web-token` signs out every device.
+- Pi parks a task after 5 crashes in a row and never runs it again on its own.
+  `health` lists stopped tasks and `retry <taskId>` reruns a parked one; the app
+  shows them in a red banner, because a parked task fails silently.
 - `pi.sqlite` runs with `synchronous=FULL` (`src/harness/storage.ts`). Chord's
   default NORMAL survives a process crash but can lose the newest commits on
   power loss, such as an approval or a `succeeded` status.
@@ -98,7 +101,7 @@ npm test               # vitest, offline (all files)
 npm run test:crash     # SIGKILL restart tests only
 npm run test:linux     # Windows: full Linux suite in WSL on the current files
 npx tsc --noEmit
-npm run cli -- chat    # terminal chat; also: run, web, stop, actions, approve <id>, memories, forget <id>, stats
+npm run cli -- chat    # terminal chat; also: run, web, stop, actions, approve <id>, memories, forget <id>, health, retry <taskId>, stats
 npm run demo           # free offline walkthrough (memory, approvals, send-once)
 npm run eval           # 15 offline evals with a JSON report
 npm run web:snapshot   # save static web UI HTML to data/web-snapshot.html

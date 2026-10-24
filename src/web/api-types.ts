@@ -59,6 +59,17 @@ export type Memory = {
   createdAt: number;
 };
 
+// A task Pi will not run: parked after repeated crashes (`canRetry`), or blocked on
+// missing or unmigratable code. `label` is plain words, for example 'Routine "Daily briefing"'.
+export type StoppedTask = {
+  taskId: number;
+  kind: string;
+  label: string;
+  reason: 'restart_limit' | 'missing_task' | 'task_too_old' | 'migration_failed';
+  restarts: number;
+  canRetry: boolean;
+};
+
 export type Spend = {
   actualUsd: number;
   openReservedUsd: number;
@@ -85,6 +96,7 @@ export type WebState = {
   actions: Action[];
   subagents: Subagent[];
   memories: Memory[];
+  stoppedTasks: StoppedTask[];
   stats: Stats;
 };
 
@@ -109,6 +121,10 @@ export type ActionDecisionRequest = {
   // The hash of the payload the owner saw.
   payloadHash: string;
 };
+
+// POST /api/tasks/retry → 200 RetryTaskResponse; 409 when the task is not stopped or cannot be retried.
+export type RetryTaskRequest = { taskId: number };
+export type RetryTaskResponse = { retried: number; label: string };
 
 // POST /api/memories/forget → 200 ForgetMemoryResponse; 409 when no memory has that id.
 export type ForgetMemoryRequest = { id: string };

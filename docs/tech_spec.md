@@ -546,6 +546,27 @@ Faux policy evals prove code boundaries, not natural-language injection resistan
 The live runner path and caps are covered with faux substitutions; real model
 behavior/billing were not exercised. No dependency, provider, or model was added.
 
+## Stopped tasks and retry
+
+Pi 1.4 parks a task that a crash cut off 5 times in a row (`settings.restartLimit`,
+left at its default): it stays live but never runs again until `Harness.retryTask()`.
+A parked tool or generation keeps its chat turn busy, so chat appears stuck; a parked
+routine silently stops. `src/harness/health.ts` lists every task that
+`harness.inspect()` reports as `blocked`, with a plain label (`Chat answer`, `Helper
+answer`, `Chat summary`, `Tool call (<name>)`, found through the live view's call id,
+or `Routine "<name>"`), its reason, restart count, and `canRetry` (only `restart_limit`;
+`missing_task`, `task_too_old`, and `migration_failed` need a code fix).
+
+`npm run cli -- health` prints them; `npm run cli -- retry <taskId>` reruns a parked
+one. Unlike Pi's `retryTask`, which quietly ignores a task that is not parked, the
+owner command refuses an unknown or non-retryable id with a reason. Without the
+running service the CLI only clears the park; the task runs at the next start. The
+web state carries `stoppedTasks`, `POST /api/tasks/retry` (`{taskId}`, behind sign-in,
+then an explicit state refresh because a task record changes no watched document)
+retries one, and the app shows a red banner with a Retry button on every screen size.
+A SIGKILL test crashes `memory_write` five times, sees it listed, retries it, and finds
+the memory stored once.
+
 ## Limits and stop
 
 `src/policy/` owns the tool allowlist and checks tool-call counts in Pi ToolTask's

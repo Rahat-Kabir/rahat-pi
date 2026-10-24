@@ -1,5 +1,6 @@
 import type {
-  ActionDecisionRequest, ApiError, ForgetMemoryRequest, ForgetMemoryResponse, MessageRequest, MessageResponse, SessionResponse, SignInRequest,
+  ActionDecisionRequest, ApiError, ForgetMemoryRequest, ForgetMemoryResponse, MessageRequest, MessageResponse,
+  RetryTaskRequest, RetryTaskResponse, SessionResponse, SignInRequest,
 } from '@api';
 
 // Every write to the brain goes through here. The brain makes all safety decisions;
@@ -49,6 +50,10 @@ export function sendMessage(request: MessageRequest) {
 
 export function decideAction(request: ActionDecisionRequest) {
   return post<{ id: string; status: string }>('/api/actions', request);
+}
+
+export function retryTask(request: RetryTaskRequest) {
+  return post<RetryTaskResponse>('/api/tasks/retry', request);
 }
 
 export function forgetMemory(request: ForgetMemoryRequest) {

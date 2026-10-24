@@ -72,6 +72,16 @@ for (const commandName of ['approve', 'reject'] as const) {
     console.log(JSON.stringify(await invoke({ name: commandName, id: actionId }), null, 2));
   });
 }
+program.command('health').description('List tasks that stopped running').action(async () => {
+  console.log(JSON.stringify(await invoke({ name: 'health' }), null, 2));
+});
+program.command('retry <taskId>').description('Run a task parked after repeated crashes again').action(async taskId => {
+  const parsedTaskId = Number(taskId);
+  if (!Number.isSafeInteger(parsedTaskId) || parsedTaskId <= 0) {
+    throw new Error('Task id must be a positive whole number');
+  }
+  console.log(JSON.stringify(await invoke({ name: 'retry', taskId: parsedTaskId }), null, 2));
+});
 program.command('forget <id>').description('Forget one remembered fact').action(async memoryId => {
   console.log(JSON.stringify(await invoke({ name: 'forget', id: memoryId }), null, 2));
 });
