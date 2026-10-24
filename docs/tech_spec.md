@@ -350,7 +350,10 @@ composer keeps one request ID per unsent text, so retrying an uncertain send is
 admitted once. Tool calls show as one plain-language line each (`ui/src/features/chat/toolCalls.ts`,
 for example `Searched memory for "tea"`), with the raw arguments folded under it;
 unknown tools fall back to `Used <name>`. Readable thinking is folded under
-"Thinking"; redacted thinking and signatures are never shown. On load the app asks `GET /api/session`; signed out, it shows a
+"Thinking"; redacted thinking and signatures are never shown. On narrow screens
+(below Tailwind's `lg`), a pinned amber banner counts approvals waiting for the owner
+and scrolls to them, and the approvals panel moves above the chat while any wait
+(capped at 60% of the screen height, scrolling inside). On load the app asks `GET /api/session`; signed out, it shows a
 one-time sign-in form that posts the token to `POST /api/session` and keeps nothing
 itself. Signed in, the browser sends the cookie on every request. Live updates use the
 existing SSE stream; a refused stream (for example after the token file was replaced)

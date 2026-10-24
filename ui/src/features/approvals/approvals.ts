@@ -9,6 +9,13 @@ export function canReject(action: Action) {
   return action.status === 'proposed' || action.status === 'approved';
 }
 
+export function waitingCount(actions: Action[]) {
+  return actions.filter(canApprove).length;
+}
+export function waitingLabel(count: number) {
+  return count === 1 ? '1 approval waiting' : `${count} approvals waiting`;
+}
+
 // Waiting-for-you first, then newest first. Proposals expire 24h after creation,
 // so a later expiry means a newer action.
 export function sortForReview(actions: Action[]) {

@@ -1,10 +1,10 @@
 import type { Action } from '@api';
 import { Panel } from '../../components/Panel';
 import { ApprovalCard } from './ApprovalCard';
-import { sortForReview } from './approvals';
+import { sortForReview, waitingCount } from './approvals';
 
 export function ApprovalsPanel({ actions }: { actions: Action[] }) {
-  const waiting = actions.filter(action => action.status === 'proposed').length;
+  const waiting = waitingCount(actions);
   return (
     <Panel
       title="Approvals"

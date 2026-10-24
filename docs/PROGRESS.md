@@ -11,6 +11,10 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
 
+### Approvals you can't miss on a phone (2026-10-24)
+On narrow screens a pinned banner ("2 approvals waiting · Review ↓") scrolls to the approvals, and the panel moves above the chat while anything waits.
+Desktop layout is unchanged. Verified: new app logic test (waiting count and label) and app build; a visual check at phone width is pending.
+
 ### Readable tool calls in the app (2026-10-24)
 Tool calls show as one plain line each (for example `Searched memory for "tea"`), with the raw arguments folded under it; running tools say what they are doing.
 Thinking is folded under "Thinking" instead of showing as raw JSON with its signature. App-only change; the brain is untouched.
