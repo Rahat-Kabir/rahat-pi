@@ -84,6 +84,7 @@ Safe crash recovery and trustworthy approvals are the main constraint.
 npm ci --no-fund --no-audit
 npm test               # vitest, offline (all files)
 npm run test:crash     # SIGKILL restart tests only
+npm run test:linux     # Windows: full Linux suite in WSL on the current files
 npx tsc --noEmit
 npm run cli -- chat    # terminal chat; also: run, web, stop, actions, approve <id>, stats
 npm run demo           # free offline walkthrough (memory, approvals, send-once)
@@ -97,6 +98,7 @@ Landmines:
   talks to the service over a Unix socket, and the crash tests use `SIGKILL`.
   On Windows, `tsc` passes and most platform-neutral tests pass; the rest fail
   for platform reasons (Unix socket, bubblewrap, `SIGKILL`, Windows file locks).
+  On Windows, verify with `npm run test:linux` (WSL) before calling a slice done.
 - Do not loosen the SSRF block list to make `web_fetch` work on a network with
   fake-IP DNS (see Key Decisions).
 

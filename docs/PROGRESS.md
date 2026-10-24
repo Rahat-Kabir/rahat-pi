@@ -24,6 +24,11 @@
 - [x] Five SIGKILL/restart demos, offline unit/integration/service tests, typecheck
 
 ## Log
+### Linux tests from Windows (2026-10-24)
+`npm run test:linux` copies the current checkout (no `.env`, `data/`, `.git`) to `~/rahat-pi-check`
+in WSL and runs typecheck plus the full suite with Node 22; `npm ci` reruns only when the lockfile
+changes. Non-Windows systems get a clear "run npm test" message instead.
+
 ### Full Linux verification in WSL (2026-10-24)
 All of today's changes (watchdog, readability, synchronous=FULL, owner/timezone settings,
 demo, Node check) verified on Linux: Ubuntu WSL, Node 22.23.4, project in the Linux home folder.

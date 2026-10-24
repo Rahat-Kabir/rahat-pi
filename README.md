@@ -197,7 +197,12 @@ A clean `stop` is never restarted, so the kill switch keeps working.
 npm test             # offline tests, including real SIGKILL restart tests (Linux)
 npm run test:crash   # crash and restart tests only
 npm run typecheck
+npm run test:linux   # Windows only: full Linux suite inside WSL on your current, uncommitted files
 ```
+
+`test:linux` copies the checkout (without `.env`, `data/`, or `.git`) to `~/rahat-pi-check`
+in WSL and runs the typecheck and all tests there. It needs WSL with Node 22 and
+bubblewrap (see "On Windows, use WSL") and never changes your files.
 
 Tests use a fake model provider and a fake outbox; they make no paid calls.
 
