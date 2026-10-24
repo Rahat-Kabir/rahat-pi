@@ -163,32 +163,33 @@ cd rahat-pi
 npm run cli -- web
 ```
 
-**Terminal 2: get the web token.** It is a random password that protects sending
-messages and approving actions:
+**Terminal 2: get the web token.** It is a random password that protects
+everything the app shows and does:
 
 ```bash
 cd rahat-pi
 cat data/web-token
 ```
 
-**Browser:** open **http://127.0.0.1:8787** (from WSL, your normal Windows browser
-works too), paste the token into **Web token**, and chat.
+**Browser:** build the app once with `npm ci --prefix ui` and `npm run ui:build`,
+then open **http://127.0.0.1:8787/app/** (from WSL, your normal Windows browser
+works too). Paste the token to sign in, and chat. You sign in once per browser:
+the app stays signed in across reloads and restarts. In Chrome, Chromium, or Edge
+you can install it as a desktop app (the install icon in the address bar). Firefox
+cannot install it.
 
-**New app (in progress):** build it once with `npm ci --prefix ui` and
-`npm run ui:build`, then open **http://127.0.0.1:8787/app/**. It has chat and
-approvals today and replaces the page above once it covers everything. In Chrome,
-Chromium, or Edge you can install it as a desktop app (the install icon in the
-address bar). Firefox cannot install it.
+The older page at **http://127.0.0.1:8787** still works once you are signed in;
+the app replaces it once it covers everything.
 
-- **The token changes every time you restart `web`.** After a restart, run
-  `cat data/web-token` again and paste the new one.
+- **The token stays the same across restarts.** To sign out every browser, delete
+  `data/web-token` and restart `web`; it makes a new one.
 - Terminal 2 can also send commands to the running agent, for example
   `npm run cli -- chat`, `npm run cli -- actions`, or `npm run cli -- stats`.
 - To stop: press `Ctrl+C` in terminal 1, or run `npm run cli -- stop`.
 
 Approval buttons are bound to the payload hash you see. The page listens only on
-`127.0.0.1`. Do not expose this port publicly: page reads are not token-protected,
-so other users on the same machine can view them.
+`127.0.0.1`. Do not expose this port publicly: it is plain HTTP, so the token and
+your chat are not encrypted on the network.
 
 ## Configuration
 

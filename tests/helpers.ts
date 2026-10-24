@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { configFromEnv } from '../src/config.js';
 
 export function temporaryData() {
-  mkdirSync('data', { recursive: true });
+  mkdirSync('data', { recursive: true, mode: 0o700 });
   const dataDir = mkdtempSync(resolve('data/test-'));
   return { dataDir, cleanup: () => rmSync(dataDir, { recursive: true, force: true }) };
 }

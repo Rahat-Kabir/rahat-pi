@@ -84,7 +84,7 @@ it.each(['action_approved', 'after_dispatch'])(
       restartedProcess = await startWebProcess(temporaryStorage.dataDir, port);
       const controller = new AbortController();
       try {
-        const response = await fetch(baseUrl + '/api/events', { signal: controller.signal });
+        const response = await fetch(baseUrl + '/api/events', { signal: controller.signal, headers: { 'X-Rahat-Token': token } });
         const reader = response.body!.getReader();
         let frames = '';
         while (!frames.includes('"status":"succeeded"')) {
@@ -98,7 +98,7 @@ it.each(['action_approved', 'after_dispatch'])(
       } finally {
         controller.abort();
       }
-      const state = await (await fetch(baseUrl + '/api/state')).json() as WebState;
+      const state = await (await fetch(baseUrl + '/api/state', { headers: { 'X-Rahat-Token': token } })).json() as WebState;
       expect(state.actions).toMatchObject([{ status: 'succeeded', approvedHash: action.payloadHash, providerReceipt: expect.stringMatching(/^fake:/) }]);
       const snapshotResult = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'scripts/web-snapshot.ts'], { env: restartedProcess.environment });
       expect(snapshotResult.stdout).toContain(join(temporaryStorage.dataDir, 'web-snapshot.html'));

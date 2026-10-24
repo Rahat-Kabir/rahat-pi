@@ -2,7 +2,9 @@
 // It imports nothing, so the browser app can type-check against it without brain code.
 // It lists only the fields the app relies on; tests/api-contract.test.ts fails to
 // compile if the brain's real state stops fitting these types.
-// Every POST needs the `X-Rahat-Token` header with the contents of data/web-token.
+// Everything except POST /api/session and the app's own files needs a sign-in: the
+// session cookie that POST /api/session sets, or the `X-Rahat-Token` header with the
+// contents of data/web-token. Without one, the brain answers 401.
 
 // `content` is a string or an array of blocks such as { type: 'text', text } and
 // { type: 'toolCall', name, arguments }. Treat all of it as untrusted text.
@@ -75,6 +77,11 @@ export type WebState = {
   subagents: Subagent[];
   stats: Stats;
 };
+
+// POST /api/session → 200 SessionResponse and a long-lived HttpOnly cookie; 401 for a wrong token.
+// GET /api/session → 200 SessionResponse when signed in, otherwise 401.
+export type SignInRequest = { token: string };
+export type SessionResponse = { signedIn: true };
 
 // POST /api/messages → 202 MessageResponse
 export type MessageRequest = {

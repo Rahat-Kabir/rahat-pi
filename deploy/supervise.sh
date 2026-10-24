@@ -18,9 +18,15 @@ isSupervisorRunning() {
   [[ -f "$supervisorPidFile" ]] && kill -0 "$(cat "$supervisorPidFile")" 2>/dev/null
 }
 
+# data/ holds chat, memory, and the web token; chmod also fixes a folder created earlier without it.
+createPrivateDataDirectory() {
+  mkdir -p "$dataDirectory"
+  chmod 700 "$dataDirectory"
+}
+
 runForeground() {
   cd "$repoDirectory"
-  mkdir -p "$dataDirectory"
+  createPrivateDataDirectory
   echo $$ > "$supervisorPidFile"
   local servicePid=""
   # Forward SIGTERM/SIGINT so the service shuts down cleanly, then stop supervising.
@@ -51,7 +57,7 @@ case "${1:-}" in
       echo "Already running (supervisor pid $(cat "$supervisorPidFile"))"
       exit 0
     fi
-    mkdir -p "$dataDirectory"
+    createPrivateDataDirectory
     # Run through bash so a checkout without the executable bit (e.g. committed from Windows) still works.
     setsid nohup bash "$repoDirectory/deploy/supervise.sh" foreground >> "$logFile" 2>&1 < /dev/null &
     echo "Started. Logs: $logFile"

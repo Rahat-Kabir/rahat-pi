@@ -62,7 +62,7 @@ export function buildTools(memoryIndex: MemoryIndex, calendar: CalendarAdapter, 
     }),
     defineTool({
       name: 'propose_send_message',
-      description: 'Create a draft proposal ONLY. Owner approval in the CLI is required before the fake executor may send.',
+      description: 'Create a draft proposal ONLY. Owner approval in the app or the CLI is required before the fake executor may send.',
       parameters: Type.Object({
         recipient: Type.String({ minLength: 1 }),
         body: Type.String({ minLength: 1 }),

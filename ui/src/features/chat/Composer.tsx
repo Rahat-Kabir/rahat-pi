@@ -3,7 +3,7 @@ import { Button } from '../../components/Button';
 import { describeError, sendMessage } from '../../api/client';
 import { nextPendingMessage, type PendingMessage, type WhenBusy } from './pendingMessage';
 
-export function Composer({ token, agentBusy }: { token: string; agentBusy: boolean }) {
+export function Composer({ agentBusy }: { agentBusy: boolean }) {
   const [draft, setDraft] = useState('');
   const [whenBusy, setWhenBusy] = useState<WhenBusy>('followUp');
   const [sending, setSending] = useState(false);
@@ -14,14 +14,14 @@ export function Composer({ token, agentBusy }: { token: string; agentBusy: boole
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     const message = draft.trim();
-    if (!message || sending || !token) {
+    if (!message || sending) {
       return;
     }
     setSending(true);
     setFeedback(null);
     pendingMessage.current = nextPendingMessage(pendingMessage.current, message, whenBusy, () => crypto.randomUUID());
     try {
-      await sendMessage(token, pendingMessage.current);
+      await sendMessage(pendingMessage.current);
       pendingMessage.current = undefined;
       setDraft(current => current.trim() === message ? '' : current);
     } catch (error) {
@@ -46,8 +46,7 @@ export function Composer({ token, agentBusy }: { token: string; agentBusy: boole
         onKeyDown={onKeyDown}
         rows={2}
         maxLength={16000}
-        placeholder={token ? 'Message Rahat-PI… (Enter to send, Shift+Enter for a new line)' : 'Paste the web token above to start chatting'}
-        disabled={!token}
+        placeholder="Message Rahat-PI… (Enter to send, Shift+Enter for a new line)"
         className="w-full resize-none rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
       />
       <div className="flex items-center justify-between gap-2">
@@ -64,7 +63,7 @@ export function Composer({ token, agentBusy }: { token: string; agentBusy: boole
             </select>
           </label>
         ) : <span />}
-        <Button type="submit" disabled={sending || !token || !draft.trim()}>{sending ? 'Sending…' : 'Send'}</Button>
+        <Button type="submit" disabled={sending || !draft.trim()}>{sending ? 'Sending…' : 'Send'}</Button>
       </div>
       {feedback && <p role="alert" className="text-xs text-red-700 dark:text-red-300">{feedback}</p>}
     </form>

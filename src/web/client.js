@@ -9,7 +9,7 @@ events.onopen = () => {
   connection.textContent = 'Connected';
 };
 events.onerror = () => {
-  connection.textContent = 'Disconnected; reconnecting automatically. After a service restart, paste the new web token.';
+  connection.textContent = 'Disconnected; reconnecting automatically.';
 };
 events.addEventListener('state', event => {
   state.innerHTML = JSON.parse(event.data).html;

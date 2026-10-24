@@ -45,9 +45,12 @@ function requestWithHost(baseUrl: string, host: string) {
     outgoingRequest.end();
   });
 }
-async function openEvents(baseUrl: string) {
+function readState(baseUrl: string, token: string) {
+  return fetch(baseUrl + '/api/state', { headers: { 'X-Rahat-Token': token } }).then(response => response.json() as Promise<WebState>);
+}
+async function openEvents(baseUrl: string, token: string) {
   const controller = new AbortController();
-  const response = await fetch(baseUrl + '/api/events', { signal: controller.signal });
+  const response = await fetch(baseUrl + '/api/events', { signal: controller.signal, headers: { 'X-Rahat-Token': token } });
   expect(response.status).toBe(200);
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
@@ -78,9 +81,9 @@ async function openEvents(baseUrl: string) {
     },
   };
 }
-async function waitForState(baseUrl: string, predicate: (state: WebState) => boolean) {
+async function waitForState(baseUrl: string, token: string, predicate: (state: WebState) => boolean) {
   for (let attempt = 0; attempt < 500; attempt++) {
-    const state = await (await fetch(baseUrl + '/api/state')).json() as WebState;
+    const state = await readState(baseUrl, token);
     if (predicate(state)) {
       return state;
     }
@@ -100,10 +103,10 @@ describe('local web UI', () => {
     }
   });
 
-  it('serves the page, protects Host and POST tokens, and never embeds credentials', async () => {
+  it('serves the page, protects Host, requires sign-in for every read and write, and never embeds credentials', async () => {
     const fixture = await webFixture();
     try {
-      const response = await fetch(fixture.baseUrl);
+      const response = await fetch(fixture.baseUrl, { headers: { 'X-Rahat-Token': fixture.token } });
       const page = await response.text();
       expect(response.status).toBe(200);
       expect(page).toContain('Main conversation');
@@ -119,9 +122,17 @@ describe('local web UI', () => {
       for (const host of ['evil.example', `evil.example:${fixture.server.port}`, `127.0.0.1:${fixture.server.port + 1}`, `127.0.0.1:${fixture.server.port}.evil.example`]) {
         expect(await requestWithHost(fixture.baseUrl, host)).toBe(403);
       }
-      expect(await requestWithHost(fixture.baseUrl, `localhost:${fixture.server.port}`)).toBe(200);
-      expect((await post(fixture.baseUrl, '', '/api/messages', { message: 'blocked' })).status).toBe(403);
-      expect((await post(fixture.baseUrl, 'bad-token', '/api/actions', {})).status).toBe(403);
+      // Signed out, the old page sends the owner to the app to sign in.
+      expect(await requestWithHost(fixture.baseUrl, `localhost:${fixture.server.port}`)).toBe(303);
+      const signedOutPage = await fetch(fixture.baseUrl, { redirect: 'manual' });
+      expect(signedOutPage.headers.get('location')).toBe('/app/');
+      expect(await signedOutPage.text()).not.toContain('Main conversation');
+      for (const readPath of ['/api/state', '/api/events', '/api/session']) {
+        expect((await fetch(fixture.baseUrl + readPath)).status).toBe(401);
+        expect((await fetch(fixture.baseUrl + readPath, { headers: { 'X-Rahat-Token': 'bad-token' } })).status).toBe(401);
+      }
+      expect((await post(fixture.baseUrl, '', '/api/messages', { message: 'blocked' })).status).toBe(401);
+      expect((await post(fixture.baseUrl, 'bad-token', '/api/actions', {})).status).toBe(401);
       expect((await post(fixture.baseUrl, fixture.token, '/api/messages', { message: '' })).status).toBe(400);
       expect((await post(fixture.baseUrl, fixture.token, '/api/messages', { message: 'oversized'.repeat(8000) })).status).toBe(413);
       expect((await post(fixture.baseUrl, fixture.token, '/api/messages', { message: 'hello', whenBusy: 'invalid' })).status).toBe(400);
@@ -147,7 +158,7 @@ describe('local web UI', () => {
     ]);
     const modelSpy = vi.spyOn(modelSetup, 'buildModels').mockReturnValue({ models, modelRef: { provider: 'faux', modelId: fauxModelProvider.getModel().id } });
     const fixture = await webFixture();
-    const events = await openEvents(fixture.baseUrl);
+    const events = await openEvents(fixture.baseUrl, fixture.token);
     try {
       await events.nextState();
       const response = await post(fixture.baseUrl, fixture.token, '/api/messages', { message: 'Search then answer.' });
@@ -196,10 +207,10 @@ describe('local web UI', () => {
       await started;
       expect((await post(fixture.baseUrl, fixture.token, '/api/messages', { message: 'Change direction', whenBusy: 'steer' })).status).toBe(202);
       expect((await post(fixture.baseUrl, fixture.token, '/api/messages', { message: 'Next turn', whenBusy: 'followUp' })).status).toBe(202);
-      const queued = await (await fetch(fixture.baseUrl + '/api/state')).json();
+      const queued = await readState(fixture.baseUrl, fixture.token);
       expect(queued.inbox.items).toMatchObject([{ mode: 'steer', content: 'Change direction' }, { mode: 'followUp', content: 'Next turn' }]);
       releaseFirstResponse();
-      const finalState = await waitForState(fixture.baseUrl, state => conversationText(state).includes('Follow-up answer') && !('run' in state.live));
+      const finalState = await waitForState(fixture.baseUrl, fixture.token, state => conversationText(state).includes('Follow-up answer') && !('run' in state.live));
       const messages = finalState.entries.flatMap(entry => entry.model);
       expect(messages.findIndex(message => message.content === 'Change direction')).toBeLessThan(messages.findIndex(message => message.content === 'Next turn'));
       expect(fauxModelProvider.state.callCount).toBe(3);
@@ -212,7 +223,7 @@ describe('local web UI', () => {
 
   it('binds HTTP decisions to the displayed hash and shares CLI approval and fake execution', async () => {
     const fixture = await webFixture();
-    const events = await openEvents(fixture.baseUrl);
+    const events = await openEvents(fixture.baseUrl, fixture.token);
     try {
       await fixture.app.dispatch({ name: 'chat', message: toolMessage('propose_send_message', { recipient: 'fixture:owner', body: 'Original' }) });
       const state = await events.nextState(state => state.actions.length === 1);
@@ -240,9 +251,61 @@ describe('local web UI', () => {
     }
   });
 
-  it('reconnects to durable state after restarting the server and rotates the POST token', async () => {
+  it('signs in once with an HttpOnly cookie that reads, writes, and refuses a wrong token', async () => {
     const fixture = await webFixture();
-    const firstEvents = await openEvents(fixture.baseUrl);
+    try {
+      const signIn = (token: string) => fetch(fixture.baseUrl + '/api/session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
+      });
+      const wrongSignIn = await signIn('wrong-token');
+      expect(wrongSignIn.status).toBe(401);
+      expect(wrongSignIn.headers.get('set-cookie')).toBeNull();
+
+      const signInResponse = await signIn(fixture.token);
+      expect(signInResponse.status).toBe(200);
+      expect(await signInResponse.json()).toEqual({ signedIn: true });
+      const sessionCookie = signInResponse.headers.get('set-cookie')!;
+      expect(sessionCookie).toContain('HttpOnly');
+      expect(sessionCookie).toContain('SameSite=Strict');
+      expect(sessionCookie).toContain(`Max-Age=${400 * 24 * 60 * 60}`);
+
+      const cookieHeader = { Cookie: sessionCookie.split(';')[0] };
+      expect((await fetch(fixture.baseUrl + '/api/session', { headers: cookieHeader })).status).toBe(200);
+      expect((await fetch(fixture.baseUrl + '/api/state', { headers: cookieHeader })).status).toBe(200);
+      expect((await fetch(fixture.baseUrl, { headers: cookieHeader })).status).toBe(200);
+      const sendWithCookie = await fetch(fixture.baseUrl + '/api/messages', {
+        method: 'POST', headers: { ...cookieHeader, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: 'Signed in by cookie' }),
+      });
+      expect(sendWithCookie.status).toBe(202);
+      expect((await fetch(fixture.baseUrl + '/api/state', { headers: { Cookie: 'rahat_session=wrong-token' } })).status).toBe(401);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps the token across restarts and replaces a damaged token file', async () => {
+    const fixture = await webFixture();
+    const tokenPath = join(fixture.config.dataDir, 'web-token');
+    let restartedServer: Awaited<ReturnType<typeof startWebServer>> | undefined;
+    try {
+      await fixture.server.close();
+      restartedServer = await startWebServer(fixture.app, 0);
+      expect(readFileSync(tokenPath, 'utf8').trim()).toBe(fixture.token);
+      await restartedServer.close();
+      writeFileSync(tokenPath, 'not a token\n');
+      restartedServer = await startWebServer(fixture.app, 0);
+      expect(readFileSync(tokenPath, 'utf8').trim()).toMatch(/^[0-9a-f]{64}$/);
+      expect(statSync(tokenPath).mode & 0o777).toBe(0o600);
+    } finally {
+      await restartedServer?.close();
+      await fixture.app.stop();
+      fixture.temporaryStorage.cleanup();
+    }
+  });
+
+  it('reconnects to durable state after restarting the server and keeps the web token', async () => {
+    const fixture = await webFixture();
+    const firstEvents = await openEvents(fixture.baseUrl, fixture.token);
     let restartedApp: App | undefined;
     let restartedServer: Awaited<ReturnType<typeof startWebServer>> | undefined;
     try {
@@ -254,14 +317,12 @@ describe('local web UI', () => {
       await fixture.app.close();
       restartedApp = await App.open(fixture.config);
       restartedServer = await startWebServer(restartedApp, fixture.server.port);
-      const secondEvents = await openEvents(fixture.baseUrl);
+      const secondEvents = await openEvents(fixture.baseUrl, fixture.token);
       try {
         expect(conversationText(await secondEvents.nextState())).toContain('Offline reply: Persist across restart');
-        expect((await post(fixture.baseUrl, fixture.token, '/api/messages', message)).status).toBe(403);
-        const newToken = readFileSync(join(fixture.config.dataDir, 'web-token'), 'utf8').trim();
-        expect(newToken).not.toBe(fixture.token);
-        expect((await post(fixture.baseUrl, newToken, '/api/messages', message)).status).toBe(202);
-        const state = await (await fetch(fixture.baseUrl + '/api/state')).json() as WebState;
+        expect(readFileSync(join(fixture.config.dataDir, 'web-token'), 'utf8').trim()).toBe(fixture.token);
+        expect((await post(fixture.baseUrl, fixture.token, '/api/messages', message)).status).toBe(202);
+        const state = await readState(fixture.baseUrl, fixture.token);
         expect(state.entries.flatMap(entry => entry.model).filter(message => message.role === 'user' && message.content === 'Persist across restart')).toHaveLength(1);
       } finally {
         secondEvents.close();
@@ -280,7 +341,7 @@ describe('local web UI', () => {
     try {
       await fixture.app.dispatch({ name: 'chat', message: toolMessage('subagent_run', { task: 'Snapshot child answer', title: 'Snapshot child' }) });
       await fixture.app.dispatch({ name: 'chat', message: toolMessage('propose_send_message', { recipient: 'fixture:owner', body: '<script>alert("untrusted")</script>' }) });
-      const state = await (await fetch(fixture.baseUrl + '/api/state')).json() as WebState;
+      const state = await readState(fixture.baseUrl, fixture.token);
       expect(state.subagents).toMatchObject([{ title: 'Snapshot child', status: 'completed', answer: 'Offline reply: Snapshot child answer' }]);
       const snapshot = renderPage(state, true);
       expect(snapshot).toContain('&lt;script&gt;');

@@ -5,7 +5,7 @@ import { Composer } from './Composer';
 import { MessageBubble } from './MessageBubble';
 import { liveAnswer, queuedText, runFailure, transcript } from './messages';
 
-export function ChatView({ state, token }: { state: WebState; token: string }) {
+export function ChatView({ state }: { state: WebState }) {
   const messages = transcript(state);
   const answer = liveAnswer(state);
   const failure = runFailure(state);
@@ -44,7 +44,7 @@ export function ChatView({ state, token }: { state: WebState; token: string }) {
         {failure && <p role="alert" className="rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{failure}</p>}
         <div ref={bottom} />
       </div>
-      <Composer token={token} agentBusy={agentBusy} />
+      <Composer agentBusy={agentBusy} />
     </Panel>
   );
 }

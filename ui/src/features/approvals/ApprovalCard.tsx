@@ -14,7 +14,7 @@ const statusColors: Record<Action['status'], string> = {
   rejected: 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
 };
 
-export function ApprovalCard({ action, token }: { action: Action; token: string }) {
+export function ApprovalCard({ action }: { action: Action }) {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -23,7 +23,7 @@ export function ApprovalCard({ action, token }: { action: Action; token: string 
     setFeedback(null);
     try {
       // Send the hash of the payload shown on this card; the brain refuses it if the payload changed.
-      await decideAction(token, { decision, id: action.id, payloadHash: action.payloadHash });
+      await decideAction({ decision, id: action.id, payloadHash: action.payloadHash });
     } catch (error) {
       setFeedback(describeError(error));
     } finally {
@@ -59,14 +59,13 @@ export function ApprovalCard({ action, token }: { action: Action; token: string 
       {canReject(action) && (
         <div className="flex gap-2">
           {canApprove(action) && (
-            <Button onClick={() => decide('approve')} disabled={busy || !token} className="flex-1">Approve exactly this</Button>
+            <Button onClick={() => decide('approve')} disabled={busy} className="flex-1">Approve exactly this</Button>
           )}
-          <Button variant="danger" onClick={() => decide('reject')} disabled={busy || !token}>
+          <Button variant="danger" onClick={() => decide('reject')} disabled={busy}>
             {canApprove(action) ? 'Reject' : 'Cancel before sending'}
           </Button>
         </div>
       )}
-      {canReject(action) && !token && <p className="text-xs text-slate-500">Paste the web token above to decide.</p>}
       {feedback && <p role="alert" className="text-xs text-red-700 dark:text-red-300">{feedback}</p>}
     </article>
   );

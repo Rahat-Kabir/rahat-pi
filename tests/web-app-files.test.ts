@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { request } from 'node:http';
 import { App } from '../src/harness/app.js';
@@ -24,6 +24,7 @@ async function appFilesFixture(build: boolean) {
   const server = await startWebServer(app, 0, appDirectory);
   return {
     port: server.port,
+    token: readFileSync(join(config.dataDir, 'web-token'), 'utf8').trim(),
     async cleanup() {
       await server.close();
       await app.stop();
@@ -32,9 +33,9 @@ async function appFilesFixture(build: boolean) {
   };
 }
 // Raw requests keep the path exactly as written; fetch would normalize `..` away.
-function rawGet(port: number, path: string) {
+function rawGet(port: number, path: string, token = '') {
   return new Promise<{ status: number | undefined; contentType: string | undefined; body: string }>((resolve, reject) => {
-    const outgoingRequest = request({ host: '127.0.0.1', port, path }, response => {
+    const outgoingRequest = request({ host: '127.0.0.1', port, path, headers: { 'X-Rahat-Token': token } }, response => {
       let body = '';
       response.setEncoding('utf8');
       response.on('data', chunk => body += chunk);
@@ -60,7 +61,7 @@ describe('built app files', () => {
       expect((await rawGet(fixture.port, '/app/manifest.webmanifest')).contentType).toBe('application/manifest+json');
       expect((await rawGet(fixture.port, '/app/assets/app.js?version=1')).status).toBe(200);
       // The old page keeps working at / until the app replaces it.
-      expect((await rawGet(fixture.port, '/')).body).toContain('Main conversation');
+      expect((await rawGet(fixture.port, '/', fixture.token)).body).toContain('Main conversation');
     } finally {
       await fixture.cleanup();
     }
@@ -82,7 +83,8 @@ describe('built app files', () => {
         '/app/missing.js',
         '/application',
       ]) {
-        const response = await rawGet(fixture.port, path);
+        // Signed in, so only the file rules (not the sign-in check) can refuse these.
+        const response = await rawGet(fixture.port, path, fixture.token);
         expect(response.status, path).toBe(404);
         expect(response.body, path).not.toContain('secret');
       }

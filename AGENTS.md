@@ -79,6 +79,10 @@ Safe crash recovery and trustworthy approvals are the main constraint.
   (defaults `Owner` / `UTC`), so no personal details live in code. Only
   fixed-offset timezones are accepted: routines and daily caps use 24-hour days.
   Each routine stores its own timezone. Tests pin `Etc/GMT-6` via `tests/helpers.ts`.
+- The web token is stable across restarts and the app signs in once into an
+  HttpOnly, SameSite=Strict cookie. Every data route, reads included, needs it
+  (or `X-Rahat-Token`). Page scripts never hold the token, and deleting
+  `data/web-token` signs out every device.
 - `pi.sqlite` runs with `synchronous=FULL` (`src/harness/storage.ts`). Chord's
   default NORMAL survives a process crash but can lose the newest commits on
   power loss, such as an approval or a `succeeded` status.

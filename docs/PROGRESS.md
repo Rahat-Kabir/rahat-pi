@@ -11,6 +11,16 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
 
+### Sign in once; every read needs it (2026-10-24)
+The web token now survives restarts; the app signs in once and gets a 400-day HttpOnly, SameSite=Strict cookie, so reloads and the installed app stay signed in.
+Every data route (`/`, `/api/state`, `/api/events`, POSTs) now needs the cookie or `X-Rahat-Token`; before, reads were open to anyone who could reach the port.
+Verified: new sign-in, restart, and signed-out tests; full offline suite with SIGKILL tests; app tests and build. Still open: remote access (Tailscale, `Secure` cookie).
+
+### Approval wording and private data folder (2026-10-24)
+The system prompt and `propose_send_message` now say approval happens in the app or the owner CLI.
+`App.open` and `deploy/supervise.sh` set `data/` to 0700 even when it already existed; before, a folder created by the script or a test stayed readable by other users.
+Verified: new storage test, full offline suite, typecheck, and a sandboxed supervise.sh start for new and existing folders.
+
 ### App shell with chat and approvals (2026-10-24)
 `ui/` holds a React app served at `/app/`, typed against a self-contained API contract that a type test keeps in line with the brain.
 Static serving refuses traversal, symlink escapes, and unknown types; the old page at `/` is unchanged.

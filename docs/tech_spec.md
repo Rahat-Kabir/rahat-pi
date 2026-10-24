@@ -9,7 +9,7 @@ dotenv 18.0.9. TypeScript ESM runs through tsx. No alternative harness is used.
 `src/cli.ts` parses owner commands. It attaches to the service's Unix socket when
 available; otherwise it opens an App for that operation. `src/main.ts` runs the
 scheduler and fake executor. The socket is mode 0600, inside the data directory
-(created mode 0700). It is not an Internet gateway; local OS access is owner authority.
+(set to mode 0700 on every open, even if it already existed). It is not an Internet gateway; local OS access is owner authority.
 Chord's kernel-owned `processLock`, keyed by the real data-directory path, prevents
 multiple processes opening Pi storage. On Linux its abstract socket vanishes on
 SIGKILL, so there is no stale PID lock. A stale service socket is removed only after
@@ -252,12 +252,23 @@ The HTTP listener binds exclusively `127.0.0.1`, using `RAHAT_PI_WEB_PORT` (defa
 8787; integer 1–65535). Tests pass port 0 directly to `startWebServer` for ephemeral
 ports. Every route requires exactly `127.0.0.1:<actualPort>` or
 `localhost:<actualPort>` in Host. Other Host values get 403, blocking DNS rebinding.
-Each start generates 32 random bytes and saves their hex encoding to
-`<dataDir>/web-token`, explicitly chmod 0600, logging only the path. POST requires
-that token in `X-Rahat-Token`, compared in constant time, and application/json.
-The page asks the owner to paste it; tokens stay in page memory and rotate after
-restart. No token is served by GET or placed in URLs. No environment/config/key
-endpoint exists. GET state is readable by local users; this is not multi-user auth.
+The first start generates 32 random bytes and saves their hex encoding to
+`<dataDir>/web-token`, chmod 0600, logging only the path. Later starts reuse a valid
+saved token (64 hex characters) so signed-in devices stay signed in; a missing or
+damaged file gets a new one. Deleting the file and restarting signs every device out.
+
+Every route except `POST /api/session`, `/client.js`, and the app files under `/app/`
+(which hold no owner data) needs a sign-in, compared in constant time: the
+`rahat_session` cookie or the `X-Rahat-Token` header (used by scripts and the old
+page's POSTs). Without one: 401, except `GET /`, which redirects (303) to `/app/`.
+`POST /api/session` with `{token}` sets the cookie to the token with `HttpOnly;
+SameSite=Strict; Path=/; Max-Age` 400 days (the browser maximum); a wrong token gets
+401 and no cookie. `GET /api/session` answers 200 when signed in. HttpOnly keeps
+page scripts from reading the token; SameSite=Strict plus required
+application/json POST bodies and no CORS headers block cross-site use. The cookie is
+not `Secure` yet: the listener is plain HTTP on loopback. No token is served by GET
+or placed in URLs. No environment/config/key endpoint exists. One owner token; this is
+not multi-user auth.
 
 Responses are no-store, disallow cross-origin reads (no CORS headers), and set
 CSP (self scripts/connections, no frames, base URLs, or external resources),
@@ -294,7 +305,7 @@ It invokes `app.dispatch`, the existing CLI command path. That path compares the
 optional expected hash inside the same Pi commit that updates the action, then
 uses unchanged `approveAction` expiry/hash validation or rejection rules. HTTP
 requires the hash; existing CLI arguments/formats and crash hooks are unchanged.
-A stale hash returns 409, invalid token/Host 403, malformed input 400/415, oversized
+A stale hash returns 409, missing sign-in 401, wrong Host 403, malformed input 400/415, oversized
 input 413. The existing executor remains the sole sender. New HTTP crash tests
 exercise `action_approved` and `after_dispatch`, with one fake outbox row after
 restart/reconciliation and no blind resend.
@@ -302,7 +313,7 @@ restart/reconciliation and no blind resend.
 EventSource retries every second and acquires the current durable snapshot; no
 SSE event history/cursor needs persistence. The web command resumes Pi tasks on
 start. `scripts/web-snapshot.ts` (`npm run web:snapshot`) fetches `/api/state` from
-the running server and uses the same renderer to save `<dataDir>/web-snapshot.html`
+the running server (sending `X-Rahat-Token` from the token file) and uses the same renderer to save `<dataDir>/web-snapshot.html`
 without scripts or token. Offline tests also leave a representative snapshot in
 `data/web-snapshot.html`; snapshots contain personal conversation/action data.
 
@@ -336,8 +347,12 @@ Safety stays in the brain. The app renders all model, tool, and payload text as 
 text (escaped), never as HTML. Approval cards send the hash of the payload they
 show; approve appears only for `proposed`, reject (cancel) also for `approved`. The
 composer keeps one request ID per unsent text, so retrying an uncertain send is
-admitted once. The token stays in page memory. Live updates use the existing SSE
-stream. The manifest and PNG/SVG icons make it installable in Chromium browsers; there
+admitted once. On load the app asks `GET /api/session`; signed out, it shows a
+one-time sign-in form that posts the token to `POST /api/session` and keeps nothing
+itself. Signed in, the browser sends the cookie on every request. Live updates use the
+existing SSE stream; a refused stream (for example after the token file was replaced)
+makes the app check its sign-in again. Remote access (for example Tailscale with HTTPS)
+is not set up yet; adding it also needs `Secure` cookies and its Host name allowed. The manifest and PNG/SVG icons make it installable in Chromium browsers; there
 is no service worker or offline mode. Done so far: chat and approvals. Still open:
 notifications, memories and routines (needs owner commands), activity, removing the
 old page.

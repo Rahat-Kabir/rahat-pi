@@ -1,7 +1,8 @@
-import type { ActionDecisionRequest, ApiError, MessageRequest, MessageResponse } from '@api';
+import type { ActionDecisionRequest, ApiError, MessageRequest, MessageResponse, SessionResponse, SignInRequest } from '@api';
 
 // Every write to the brain goes through here. The brain makes all safety decisions;
 // this file only sends requests and reports what the brain answered.
+// Sign-in lives in an HttpOnly cookie the browser sends by itself; scripts never see the token after sign-in.
 
 export class ApiRequestError extends Error {
   constructor(readonly status: number, message: string) {
@@ -9,12 +10,15 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function post<ResponseBody>(path: string, token: string, body: unknown): Promise<ResponseBody> {
-  const response = await fetch(path, {
+async function post<ResponseBody>(path: string, body: unknown): Promise<ResponseBody> {
+  return readResponse<ResponseBody>(await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Rahat-Token': token },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }));
+}
+
+async function readResponse<ResponseBody>(response: Response): Promise<ResponseBody> {
   const result: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const message = (result as ApiError | null)?.error ?? `Request failed (${response.status})`;
@@ -23,18 +27,32 @@ async function post<ResponseBody>(path: string, token: string, body: unknown): P
   return result as ResponseBody;
 }
 
-export function sendMessage(token: string, request: MessageRequest) {
-  return post<MessageResponse>('/api/messages', token, request);
+export function signIn(request: SignInRequest) {
+  return post<SessionResponse>('/api/session', request);
 }
 
-export function decideAction(token: string, request: ActionDecisionRequest) {
-  return post<{ id: string; status: string }>('/api/actions', token, request);
+// True when the browser holds a valid sign-in; false when the brain answers 401.
+export async function checkSignedIn() {
+  const response = await fetch('/api/session');
+  if (response.status === 401) {
+    return false;
+  }
+  await readResponse<SessionResponse>(response);
+  return true;
+}
+
+export function sendMessage(request: MessageRequest) {
+  return post<MessageResponse>('/api/messages', request);
+}
+
+export function decideAction(request: ActionDecisionRequest) {
+  return post<{ id: string; status: string }>('/api/actions', request);
 }
 
 // Turns API failures into a sentence the owner can act on.
 export function describeError(error: unknown) {
-  if (error instanceof ApiRequestError && error.status === 403) {
-    return 'The web token is missing or out of date. Paste the current contents of data/web-token.';
+  if (error instanceof ApiRequestError && error.status === 401) {
+    return 'You are signed out. Reload the app and sign in with the contents of data/web-token.';
   }
   if (error instanceof ApiRequestError && error.status === 409) {
     return `The brain refused this: ${error.message}`;

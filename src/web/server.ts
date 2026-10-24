@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { App } from '../harness/app.js';
@@ -65,11 +65,37 @@ function requireString(body: Record<string, unknown>, name: string, maximumLengt
   return value;
 }
 
-export async function startWebServer(app: App, port = app.config.webPort, appDirectory = defaultAppDirectory) {
-  const token = randomBytes(32).toString('hex');
-  const tokenPath = join(app.config.dataDir, 'web-token');
+// The token survives restarts so signed-in devices stay signed in.
+// Deleting data/web-token and restarting signs every device out.
+function loadOrCreateToken(tokenPath: string) {
+  const savedToken = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf8').trim() : '';
+  const token = /^[0-9a-f]{64}$/.test(savedToken) ? savedToken : randomBytes(32).toString('hex');
   writeFileSync(tokenPath, token + '\n', { mode: 0o600 });
   chmodSync(tokenPath, 0o600);
+  return token;
+}
+function readCookie(incomingRequest: IncomingMessage, name: string) {
+  for (const cookie of (incomingRequest.headers.cookie ?? '').split(';')) {
+    const [cookieName, ...valueParts] = cookie.trim().split('=');
+    if (cookieName === name) {
+      return valueParts.join('=');
+    }
+  }
+  return undefined;
+}
+
+const sessionCookieName = 'rahat_session';
+// 400 days is the longest cookie lifetime browsers accept.
+const sessionMaxAgeSeconds = 400 * 24 * 60 * 60;
+
+export async function startWebServer(app: App, port = app.config.webPort, appDirectory = defaultAppDirectory) {
+  const token = loadOrCreateToken(join(app.config.dataDir, 'web-token'));
+  const matchesToken = (suppliedToken: unknown) => typeof suppliedToken === 'string'
+    && Buffer.byteLength(suppliedToken) === token.length
+    && timingSafeEqual(Buffer.from(suppliedToken), Buffer.from(token));
+  // The app signs in with the cookie; scripts and the old page's POSTs may send the header.
+  const isSignedIn = (incomingRequest: IncomingMessage) =>
+    matchesToken(incomingRequest.headers['x-rahat-token']) || matchesToken(readCookie(incomingRequest, sessionCookieName));
   const clientScript = readFileSync(new URL('./client.js', import.meta.url));
   const conversationView = await app.root.viewState(context);
   const actionsWatch = await app.harness.watchDoc(AppDoc, context);
@@ -112,10 +138,49 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
       throw new HttpError(403, 'Host is not allowed');
     }
     const path = incomingRequest.url;
+    // Signing in, the old page's script, and the app's files carry no owner data, so they are public.
+    if (incomingRequest.method === 'POST' && path === '/api/session') {
+      const body = await readBody(incomingRequest);
+      if (!matchesToken(body.token)) {
+        throw new HttpError(401, 'Wrong web token; paste the contents of data/web-token');
+      }
+      // HttpOnly keeps the token away from page scripts; SameSite=Strict keeps other sites from using it.
+      response.setHeader('Set-Cookie',
+        `${sessionCookieName}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionMaxAgeSeconds}`);
+      sendJson(response, 200, { signedIn: true });
+      return;
+    }
     if (incomingRequest.method === 'GET') {
       if (path === '/client.js') {
         response.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' });
         response.end(clientScript);
+        return;
+      }
+      const pathname = new URL(path ?? '/', 'http://localhost').pathname;
+      if (isAppPath(pathname)) {
+        if (!appIsBuilt(appDirectory)) {
+          throw new HttpError(404, 'App not built; run npm run ui:build');
+        }
+        const appFile = findAppFile(appDirectory, pathname === '/app' ? '/app/' : pathname);
+        if (!appFile) {
+          throw new HttpError(404, 'Not found');
+        }
+        response.writeHead(200, { 'Content-Type': appFile.contentType });
+        response.end(readFileSync(appFile.path));
+        return;
+      }
+    }
+    if (!isSignedIn(incomingRequest)) {
+      if (incomingRequest.method === 'GET' && path === '/') {
+        response.writeHead(303, { Location: '/app/' });
+        response.end();
+        return;
+      }
+      throw new HttpError(401, 'Sign in required; paste the contents of data/web-token in the app');
+    }
+    if (incomingRequest.method === 'GET') {
+      if (path === '/api/session') {
+        sendJson(response, 200, { signedIn: true });
         return;
       }
       if (path === '/api/events') {
@@ -136,28 +201,10 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
         }
         return;
       }
-      const pathname = new URL(path ?? '/', 'http://localhost').pathname;
-      if (isAppPath(pathname)) {
-        if (!appIsBuilt(appDirectory)) {
-          throw new HttpError(404, 'App not built; run npm run ui:build');
-        }
-        const appFile = findAppFile(appDirectory, pathname === '/app' ? '/app/' : pathname);
-        if (!appFile) {
-          throw new HttpError(404, 'Not found');
-        }
-        response.writeHead(200, { 'Content-Type': appFile.contentType });
-        response.end(readFileSync(appFile.path));
-        return;
-      }
       throw new HttpError(404, 'Not found');
     }
     if (incomingRequest.method !== 'POST') {
       throw new HttpError(405, 'Method not allowed');
-    }
-    const suppliedToken = incomingRequest.headers['x-rahat-token'];
-    if (typeof suppliedToken !== 'string' || Buffer.byteLength(suppliedToken) !== token.length
-      || !timingSafeEqual(Buffer.from(suppliedToken), Buffer.from(token))) {
-      throw new HttpError(403, 'Invalid web token; paste the current data/web-token');
     }
     const body = await readBody(incomingRequest);
     if (path === '/api/messages') {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { chmodSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { openFullySyncedDatabase } from '../src/harness/storage.js';
 import { App } from '../src/harness/app.js';
@@ -17,6 +18,18 @@ describe('Pi storage durability', () => {
         .toEqual(expect.objectContaining({ journal_mode: 'wal' }));
     } finally {
       await database.close();
+      temporaryStorage.cleanup();
+    }
+  });
+
+  it('makes an existing data folder private to the owner on open', async () => {
+    const temporaryStorage = temporaryData();
+    chmodSync(temporaryStorage.dataDir, 0o755);
+    try {
+      const app = await App.open(offlineConfig(temporaryStorage.dataDir));
+      await app.close();
+      expect(statSync(temporaryStorage.dataDir).mode & 0o777).toBe(0o700);
+    } finally {
       temporaryStorage.cleanup();
     }
   });
