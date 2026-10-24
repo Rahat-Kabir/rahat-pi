@@ -1,0 +1,34 @@
+{
+  "name": "rahat-pi",
+  "version": "0.1.0",
+  "description": "Self-hosted personal AI agent with exact-payload approvals and crash recovery, built on Pi Durable",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "demo": "node scripts/check-node.mjs && tsx --no-warnings=ExperimentalWarning scripts/demo.ts",
+    "cli": "node scripts/check-node.mjs && tsx --no-warnings=ExperimentalWarning src/cli.ts",
+    "start": "node scripts/check-node.mjs && tsx --no-warnings=ExperimentalWarning src/main.ts",
+    "test": "node scripts/check-node.mjs && vitest run",
+    "test:crash": "node scripts/check-node.mjs && vitest run tests/crash",
+    "typecheck": "tsc --noEmit",
+    "web:snapshot": "node scripts/check-node.mjs && tsx --no-warnings=ExperimentalWarning scripts/web-snapshot.ts",
+    "eval": "node scripts/check-node.mjs && tsx --no-warnings=ExperimentalWarning scripts/eval.ts"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-durable": "1.4.0",
+    "commander": "15.0.0",
+    "dotenv": "18.0.9"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

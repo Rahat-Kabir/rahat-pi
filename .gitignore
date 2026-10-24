@@ -1,0 +1,24 @@
+node_modules/
+data/
+.npm-cache/
+coverage/
+.reference/
+
+# Private notes (kept locally, not published)
+docs/testing.md
+docs/TROUBLESHOOTING.md
+
+# Secrets: every env file except the placeholder template
+.env
+.env.*
+!.env.example
+
+# Local SQLite files outside data/, logs, and OS/editor clutter
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

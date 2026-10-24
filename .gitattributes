@@ -1,0 +1,3 @@
+# Store and check out text files with LF line endings on every OS.
+# Shell scripts and the systemd unit break on Linux with Windows (CRLF) line endings.
+* text=auto eol=lf

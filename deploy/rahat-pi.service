@@ -1,0 +1,36 @@
+# systemd user unit for Rahat-PI (for a host that boots with systemd).
+# On a host without systemd (for example a container), use deploy/supervise.sh instead.
+#
+# Install (as the owner, on a systemd host):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/rahat-pi.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now rahat-pi
+#   loginctl enable-linger "$USER"   # keep running after logout and start at boot
+# Logs: journalctl --user -u rahat-pi -f
+# Assumes the repo is at ~/rahat-pi (%h is your home) and Node 22.19+ is on PATH below.
+# Adjust WorkingDirectory, EnvironmentFile, and PATH if yours live elsewhere.
+
+[Unit]
+Description=Rahat-PI personal durable agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/rahat-pi
+# OPENROUTER_API_KEY and RAHAT_PI_* settings. The owner writes .env; it is gitignored.
+# The leading "-" lets the service start without .env (offline faux model only if RAHAT_PI_OFFLINE=1).
+EnvironmentFile=-%h/rahat-pi/.env
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# One node process (tsx loaded in-process; env execs node), so a crash or kill -9 is seen directly by systemd.
+ExecStart=/usr/bin/env node --import tsx src/cli.ts web
+# on-failure, not always: `rahat-pi stop` makes the service exit 0 on purpose.
+# Restart=always would restart it and clear the stop flag, which defeats the kill switch.
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target
