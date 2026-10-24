@@ -167,11 +167,12 @@ export async function runEvaluations(options: { live?: boolean; reportDir?: stri
   const config = configFromEnv({
     RAHAT_PI_DATA_DIR: dataDir,
     RAHAT_PI_OFFLINE: live ? '0' : '1',
-    RAHAT_PI_MODEL: environment.RAHAT_PI_MODEL ?? 'openai/gpt-5.4-mini',
-    RAHAT_PI_SUBAGENT_MODEL: environment.RAHAT_PI_SUBAGENT_MODEL ?? 'openai/gpt-5.4-mini',
-    RAHAT_PI_SUMMARY_MODEL: environment.RAHAT_PI_SUMMARY_MODEL ?? 'openai/gpt-5.4-mini',
-    RAHAT_PI_MAX_OUTPUT_TOKENS: '512',
-    RAHAT_PI_MAX_RUN_TOKENS: live ? '64000' : '256000',
+    RAHAT_PI_MODEL: environment.RAHAT_PI_MODEL ?? 'anthropic/claude-haiku-5.5',
+    RAHAT_PI_SUBAGENT_MODEL: environment.RAHAT_PI_SUBAGENT_MODEL ?? 'anthropic/claude-haiku-5.5',
+    RAHAT_PI_SUMMARY_MODEL: environment.RAHAT_PI_SUMMARY_MODEL ?? 'anthropic/claude-haiku-5.5',
+    // Thinking models spend part of the reply limit on thinking; 512 cut live answers short.
+    RAHAT_PI_MAX_OUTPUT_TOKENS: live ? '8000' : '512',
+    RAHAT_PI_MAX_RUN_TOKENS: live ? '300000' : '256000',
     RAHAT_PI_COMPACT_AT_TOKENS: '8000',
     RAHAT_PI_DAILY_USD_CAP: live ? '0.25' : '50',
     RAHAT_PI_TOTAL_USD_CAP: live ? '0.25' : '50',

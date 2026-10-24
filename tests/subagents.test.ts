@@ -49,11 +49,12 @@ const delegate = (task: string) => toolMessage('subagent_run', { task });
 describe('bounded child conversations', () => {
   it('configures the requested model and validates child limits without provider calls', () => {
     const config = configFromEnv({});
-    expect(config.subagentModel).toBe('openai/gpt-5.4-mini');
+    expect(config.model).toBe('anthropic/claude-sonnet-5.5');
+    expect(config.subagentModel).toBe('anthropic/claude-haiku-5.5');
     expect(config.subagentMaxToolCalls).toBe(8);
     expect(config.subagentMaxMs).toBe(90000);
     const { models } = modelSetup.buildModels(config);
-    expect(models.getModel('openrouter', config.subagentModel)?.cost).toEqual({ input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0 });
+    expect(models.getModel('openrouter', config.subagentModel)?.cost).toMatchObject({ input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 });
     expect(() => modelSetup.buildModels({ ...config, subagentModel: 'missing' })).toThrow('Unknown');
     expect(() => configFromEnv({ RAHAT_PI_SUBAGENT_MAX_MS: '0' })).toThrow();
     expect(() => configFromEnv({ RAHAT_PI_SUBAGENT_MAX_TOOL_CALLS: '-1' })).toThrow();

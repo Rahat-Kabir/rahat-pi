@@ -13,14 +13,22 @@ export function temporaryData() {
 export const testOwnerName = 'Test Owner';
 export const testTimezone = 'Etc/GMT-6';
 export const testUtcOffsetMs = 6 * 3600000;
-const testIdentity = { RAHAT_PI_OWNER_NAME: testOwnerName, RAHAT_PI_TIMEZONE: testTimezone };
+// The cap and compaction tests were written against these smaller limits (they trigger
+// compaction and token caps within a few turns), so tests pin them instead of the defaults.
+const testSettings = {
+  RAHAT_PI_OWNER_NAME: testOwnerName,
+  RAHAT_PI_TIMEZONE: testTimezone,
+  RAHAT_PI_COMPACT_AT_TOKENS: '8000',
+  RAHAT_PI_MAX_RUN_TOKENS: '64000',
+  RAHAT_PI_MAX_OUTPUT_TOKENS: '1024',
+};
 
 export function offlineConfig(dataDir: string, overrides: Record<string, string> = {}) {
-  return configFromEnv({ RAHAT_PI_DATA_DIR: dataDir, RAHAT_PI_OFFLINE: '1', ...testIdentity, ...overrides });
+  return configFromEnv({ RAHAT_PI_DATA_DIR: dataDir, RAHAT_PI_OFFLINE: '1', ...testSettings, ...overrides });
 }
 export async function cli(dataDir: string, commandArguments: string[], overrides: Record<string, string> = {}) {
   const cliProcess = spawn(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...commandArguments], {
-    cwd: resolve('.'), env: { ...process.env, OPENROUTER_API_KEY: '', RAHAT_PI_OFFLINE: '1', RAHAT_PI_DATA_DIR: dataDir, RAHAT_PI_CRASH_AT: '', RAHAT_PI_NOW: '', ...testIdentity, ...overrides },
+    cwd: resolve('.'), env: { ...process.env, OPENROUTER_API_KEY: '', RAHAT_PI_OFFLINE: '1', RAHAT_PI_DATA_DIR: dataDir, RAHAT_PI_CRASH_AT: '', RAHAT_PI_NOW: '', ...testSettings, ...overrides },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '';

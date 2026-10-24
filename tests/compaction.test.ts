@@ -20,8 +20,10 @@ async function seedConversation(app: App) {
 
 describe('budgeted conversation compaction', () => {
   it('validates thresholds and defaults the summary model to the cheap model', () => {
-    expect(configFromEnv({}).summaryModel).toBe('openai/gpt-5.4-mini');
-    expect(configFromEnv({}).compactAtTokens).toBe(8000);
+    expect(configFromEnv({}).summaryModel).toBe('anthropic/claude-haiku-5.5');
+    expect(configFromEnv({}).compactAtTokens).toBe(40000);
+    expect(configFromEnv({}).maxRunTokens).toBe(300000);
+    expect(configFromEnv({}).maxOutputTokens).toBe(8000);
     expect(configFromEnv({ RAHAT_PI_SUBAGENT_MODEL: 'cheap' }).summaryModel).toBe('cheap');
     expect(configFromEnv({ RAHAT_PI_SUMMARY_MODEL: 'summary' }).summaryModel).toBe('summary');
     for (const invalidThreshold of ['0', '-1', '1.5', 'NaN']) {

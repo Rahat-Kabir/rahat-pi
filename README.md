@@ -192,8 +192,8 @@ Settings live in `.env` (see `.env.example`):
 | `OPENROUTER_API_KEY` | — | Required for live chat |
 | `RAHAT_PI_OWNER_NAME` | `Your Name` | Who the agent works for (prompt and approvals); code default `Owner` |
 | `RAHAT_PI_TIMEZONE` | `UTC` | IANA timezone for routines and daily caps; no daylight-saving zones |
-| `RAHAT_PI_MODEL` | `anthropic/claude-sonnet-4.6` | Main model |
-| `RAHAT_PI_SUBAGENT_MODEL` | `openai/gpt-5.4-mini` | Cheaper model for helpers and summaries |
+| `RAHAT_PI_MODEL` | `anthropic/claude-sonnet-5.5` | Main model |
+| `RAHAT_PI_SUBAGENT_MODEL` | `anthropic/claude-haiku-5.5` | Cheaper model for helpers and summaries |
 | `RAHAT_PI_DAILY_USD_CAP` | `5` | Daily reserved-spend cap |
 | `RAHAT_PI_MAX_RUN_TOKENS` | `300000` | Reserved tokens per message |
 | `RAHAT_PI_MAX_OUTPUT_TOKENS` | `8000` | Output cap per model reply (thinking counts too) |

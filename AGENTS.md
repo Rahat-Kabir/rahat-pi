@@ -40,8 +40,9 @@ Safe crash recovery and trustworthy approvals are the main constraint.
 
 - TypeScript (ESM), Node 22+, npm with exact pinned versions; run with `tsx`.
 - Pi Durable (`@earendil-works/pi-durable`, `pi-ai`, `chord`) on SQLite.
-- Models through OpenRouter; primary `anthropic/claude-sonnet-4.6`, OpenAI
-  model as the switchable alternative. Model slugs come from env config.
+- Models through OpenRouter; primary `anthropic/claude-sonnet-5.5`, helper
+  (subagents and summaries) `anthropic/claude-haiku-5.5`, OpenAI models as the
+  switchable alternative. Model slugs come from env config.
 - Policy boundary in code decides tool access; write tools only create
   Action proposals. The executor runs an approved payload once.
 - Action lifecycle: proposed → approved → executing → succeeded | failed | unknown.

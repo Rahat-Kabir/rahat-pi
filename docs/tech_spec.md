@@ -117,9 +117,11 @@ Exactly-once delivery means one committed parent tool result, not one terminal
 print across repeated CLI requests. Provider work interrupted mid-request may be
 reissued and charged again; reservations are never refunded.
 
-The child model is `RAHAT_PI_SUBAGENT_MODEL`, default `openai/gpt-5.4-mini` through
-OpenRouter. It exists in pi-ai 1.4.0's pinned catalog: USD 0.75 input / 4.50 output /
-0.075 cached input per million tokens. No fallback or new dependency was needed.
+The child model is `RAHAT_PI_SUBAGENT_MODEL`, default `anthropic/claude-haiku-5.5` through
+OpenRouter (the main default is `anthropic/claude-sonnet-5.5`). Both exist in pi-ai 1.4.0's
+pinned catalog. Haiku 5.5 costs USD 0.10 input / 0.50 output / 0.01 cached input per million
+tokens, rising to 0.50 / 2.50 / 0.05 for requests above 100K input tokens. Both models think
+by default, so their thinking counts toward `RAHAT_PI_MAX_OUTPUT_TOKENS`.
 Unknown configured model IDs fail on open. Offline mode uses the same faux
 provider for parent and child. A child's model is selected at creation; changing
 the environment affects new children. Children receive the task, inherited profile,
@@ -157,10 +159,10 @@ cascade sufficient; no additional reporter task is needed.
 
 `src/harness/app.ts` enables Pi 1.4.0's built-in `CompactionTask` for the main
 model. At generation preparation, Pi blocks above `RAHAT_PI_COMPACT_AT_TOKENS`
-(default 8,000), using its usage/estimate-based context count. This maps to
+(default 40,000), using its usage/estimate-based context count. This maps to
 `reserveTokens = contextWindow - threshold`; the threshold must be a positive
 integer below the model context window. The default leaves headroom for both
-summary and continuation under the conservative byte-based 64,000-token run cap;
+summary and continuation under the conservative byte-based 300,000-token run cap;
 large individual turns can still exceed it. Recent context retained verbatim is
 `min(8000, floor(threshold / 4))` tokens. Background summarization is disabled;
 Pi also handles provider context overflow with a guarded compaction attempt.
@@ -424,8 +426,11 @@ scenarios: remember, recall after restart, fixture Calendar, proposal-only.
 The inherited OPENROUTER_API_KEY is required before opening a store. Each run
 uses a fresh `data/evals/live-*` directory and fixes both daily and lifetime
 reservation caps to USD 0.25, including across restart/day rollover. Inherited cap
-settings cannot expand it. Output is capped at 512 tokens/request; default main
-model is the already-supported `openai/gpt-5.4-mini`, overridable with RAHAT_PI_MODEL.
+settings cannot expand it. Live output is capped at 8000 tokens/request (thinking
+counts toward it) and 300000 reserved tokens per message; offline evals keep 512.
+All three live models default to `anthropic/claude-haiku-5.5`, overridable with
+RAHAT_PI_MODEL / RAHAT_PI_SUBAGENT_MODEL / RAHAT_PI_SUMMARY_MODEL. The USD 0.25 caps
+still bound the whole run.
 No approval/executor tick or real outbound connector is used. Run stats/report
 retain any failures at the cap rather than retrying around it.
 
@@ -457,7 +462,7 @@ is retained conservatively. Pi's usage documents separately retain reported actu
 usage/cost; reservations are not a billing receipt. Catalog prices can change: use
 an OpenRouter account spending limit for an independent billing cap.
 
-Defaults: 64,000 reserved tokens/run, 1,024 output tokens/request, 120 seconds/run,
+Defaults: 300,000 reserved tokens/run, 8,000 output tokens/request (thinking included), 120 seconds/run,
 20 tool calls/run, USD 5/day (local day in `RAHAT_PI_TIMEZONE`). These are configurable with the env
 variables in .env.example. Automatic main-chat compaction is enabled; provider retries and deferred
 requests remain disabled. A 50ms watchdog aborts expired runs, including after restart;
