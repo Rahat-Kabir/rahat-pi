@@ -50,6 +50,15 @@ export type Subagent = {
   status: string;
 };
 
+// Stored facts the agent remembers, newest first. Treat content as untrusted text.
+export type Memory = {
+  id: string;
+  content: string;
+  // Who or what the fact came from, for example 'owner' or a web address.
+  source: string;
+  createdAt: number;
+};
+
 export type Spend = {
   actualUsd: number;
   openReservedUsd: number;
@@ -75,6 +84,7 @@ export type WebState = {
   inbox: { items: InboxItem[] };
   actions: Action[];
   subagents: Subagent[];
+  memories: Memory[];
   stats: Stats;
 };
 
@@ -99,6 +109,10 @@ export type ActionDecisionRequest = {
   // The hash of the payload the owner saw.
   payloadHash: string;
 };
+
+// POST /api/memories/forget → 200 ForgetMemoryResponse; 409 when no memory has that id.
+export type ForgetMemoryRequest = { id: string };
+export type ForgetMemoryResponse = { forgotten: string };
 
 // Any non-2xx response.
 export type ApiError = { error: string };

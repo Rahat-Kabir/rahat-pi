@@ -1,4 +1,6 @@
-import type { ActionDecisionRequest, ApiError, MessageRequest, MessageResponse, SessionResponse, SignInRequest } from '@api';
+import type {
+  ActionDecisionRequest, ApiError, ForgetMemoryRequest, ForgetMemoryResponse, MessageRequest, MessageResponse, SessionResponse, SignInRequest,
+} from '@api';
 
 // Every write to the brain goes through here. The brain makes all safety decisions;
 // this file only sends requests and reports what the brain answered.
@@ -47,6 +49,10 @@ export function sendMessage(request: MessageRequest) {
 
 export function decideAction(request: ActionDecisionRequest) {
   return post<{ id: string; status: string }>('/api/actions', request);
+}
+
+export function forgetMemory(request: ForgetMemoryRequest) {
+  return post<ForgetMemoryResponse>('/api/memories/forget', request);
 }
 
 // Turns API failures into a sentence the owner can act on.

@@ -7,9 +7,15 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [x] API contract (`src/web/api-types.ts`) and safe serving of the built app at `/app/`
 - [x] App shell (React + Vite + Tailwind), installable; chat and approvals
 - [ ] Notifications when an approval is needed or a routine finishes
-- [ ] Memories and routines: owner CLI commands first, then endpoints and screens
+- [x] Memories: owner CLI commands, then endpoint and screen
+- [ ] Routines: owner CLI commands first, then endpoints and screens
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
+
+### Memories screen (2026-10-24)
+Owner commands `memories` (newest first) and `forget <id>`; memories ride the live state, and `POST /api/memories/forget` forgets one behind sign-in.
+The app has a Chat | Memories switch; each memory shows its source and save time, and Forget asks for confirmation first. Past chat that mentions a forgotten fact is not rewritten.
+Verified: CLI and web tests (signed-out 401, unknown id 409, live update), full offline suite, app tests and build, and the CLI against the running service.
 
 ### Approvals you can't miss on a phone (2026-10-24)
 On narrow screens a pinned banner ("2 approvals waiting · Review ↓") scrolls to the approvals, and the panel moves above the chat while anything waits.

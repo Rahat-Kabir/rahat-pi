@@ -7,7 +7,7 @@ import { FixtureCalendar, GoogleCalendar } from '../src/extensions/calendar.js';
 import { App } from '../src/harness/app.js';
 import { FakeSender } from '../src/executor/fake-sender.js';
 import { configFromEnv } from '../src/config.js';
-import { temporaryData, offlineConfig, toolMessage, testOwnerName, testUtcOffsetMs } from './helpers.js';
+import { temporaryData, offlineConfig, toolMessage, testOwnerName, testUtcOffsetMs, cli, jsonOutput } from './helpers.js';
 import type { Routine } from '../src/harness/state.js';
 
 describe('memory FTS5 and provenance', () => {
@@ -115,6 +115,32 @@ describe('offline Pi integration', () => {
       expect(await app.dispatch({ name: 'outbox' })).toEqual([]);
     } finally {
       await app.close();
+      temporaryStorage.cleanup();
+    }
+  });
+  it('lets the owner list memories newest first and forget one from the CLI', async () => {
+    const temporaryStorage = temporaryData();
+    try {
+      const app = await App.open(offlineConfig(temporaryStorage.dataDir));
+      await app.dispatch({ name: 'chat', message: toolMessage('memory_write', { content: 'Likes green tea', source: 'owner' }) });
+      await app.dispatch({ name: 'chat', message: toolMessage('memory_write', { content: 'Works from Dhaka', source: 'owner' }) });
+      await app.close();
+
+      const listed = jsonOutput(await cli(temporaryStorage.dataDir, ['memories'])) as { id: string; content: string }[];
+      expect(listed.map(memory => memory.content)).toEqual(['Works from Dhaka', 'Likes green tea']);
+      expect(jsonOutput(await cli(temporaryStorage.dataDir, ['forget', listed[1].id]))).toEqual({ forgotten: listed[1].id });
+      const remaining = jsonOutput(await cli(temporaryStorage.dataDir, ['memories'])) as { content: string }[];
+      expect(remaining.map(memory => memory.content)).toEqual(['Works from Dhaka']);
+
+      const searchApp = await App.open(offlineConfig(temporaryStorage.dataDir));
+      try {
+        const search = await searchApp.dispatch({ name: 'chat', message: toolMessage('memory_search', { query: 'tea' }) });
+        expect(JSON.stringify(search)).not.toContain('Likes green tea');
+        await expect(searchApp.dispatch({ name: 'forget', id: listed[1].id })).rejects.toThrow('Memory not found');
+      } finally {
+        await searchApp.close();
+      }
+    } finally {
       temporaryStorage.cleanup();
     }
   });

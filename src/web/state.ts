@@ -18,6 +18,7 @@ export async function readWebState(app: App, conversationView: ConversationView)
     inbox: (conversationView.docs['pi.inbox'] ?? { items: [] }) as InboxState,
     actions: Object.values(state?.actions ?? {}),
     subagents: await app.listSubagents(),
+    memories: await app.listMemories(),
     stats: await app.stats(),
   };
 }

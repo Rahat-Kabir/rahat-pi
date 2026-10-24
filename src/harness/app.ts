@@ -28,7 +28,8 @@ import { approveAction, editAction } from '../executor/actions.js';
 
 export type Command =
   | { name: 'chat'; message: string; requestId?: string }
-  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' }
+  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' }
+  | { name: 'forget'; id: string }
   | { name: 'approve' | 'reject'; id: string; payloadHash?: string }
   | { name: 'edit'; id: string; recipient: string; body: string };
 export type Output = (event: { type: 'text' | 'tool'; text: string }) => void;
@@ -250,6 +251,10 @@ export class App {
         return Object.values((await this.harness.snapshot(AppDoc, context))?.actions ?? {});
       case 'subagents':
         return this.listSubagents();
+      case 'memories':
+        return this.listMemories();
+      case 'forget':
+        return this.forgetMemory(command.id);
       case 'state':
         return await this.harness.snapshot(AppDoc, context);
       case 'outbox':
@@ -275,6 +280,22 @@ export class App {
       subagents[subagent.status] = (subagents[subagent.status] ?? 0) + 1;
     }
     return { ...stats, subagents };
+  }
+  // Newest first, so the owner sees what was just remembered at the top.
+  async listMemories() {
+    const memories = (await this.harness.snapshot(AppDoc, context))?.memories ?? {};
+    return Object.values(memories).sort((first, second) => second.createdAt - first.createdAt);
+  }
+  // Unlike the agent's memory_forget, the owner hears about an unknown id instead of a silent success.
+  private async forgetMemory(id: string) {
+    return this.harness.commit(async transaction => {
+      const memories = (await transaction.doc(AppDoc)).memories;
+      if (!memories[id]) {
+        throw new Error('Memory not found');
+      }
+      delete memories[id];
+      return { forgotten: id };
+    }, context);
   }
   async listSubagents() {
     const subagents = await this.harness.snapshot(SubagentsDoc, context);

@@ -283,6 +283,30 @@ describe('local web UI', () => {
     }
   });
 
+  it('shows memories in the live state and forgets one only when signed in', async () => {
+    const fixture = await webFixture();
+    try {
+      await fixture.app.dispatch({ name: 'chat', message: toolMessage('memory_write', { content: '<b>Likes tea</b>', source: 'owner' }) });
+      const [memory] = (await readState(fixture.baseUrl, fixture.token)).memories;
+      expect(memory).toMatchObject({ content: '<b>Likes tea</b>', source: 'owner' });
+
+      expect((await post(fixture.baseUrl, '', '/api/memories/forget', { id: memory.id })).status).toBe(401);
+      expect((await post(fixture.baseUrl, fixture.token, '/api/memories/forget', {})).status).toBe(400);
+      expect((await post(fixture.baseUrl, fixture.token, '/api/memories/forget', { id: 'missing' })).status).toBe(409);
+      const events = await openEvents(fixture.baseUrl, fixture.token);
+      try {
+        const forgetResponse = await post(fixture.baseUrl, fixture.token, '/api/memories/forget', { id: memory.id });
+        expect(forgetResponse.status).toBe(200);
+        expect(await forgetResponse.json()).toEqual({ forgotten: memory.id });
+        await events.nextState(state => state.memories.length === 0);
+      } finally {
+        events.close();
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('keeps the token across restarts and replaces a damaged token file', async () => {
     const fixture = await webFixture();
     const tokenPath = join(fixture.config.dataDir, 'web-token');

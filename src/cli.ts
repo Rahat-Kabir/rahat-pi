@@ -62,7 +62,7 @@ program.command('stats').option('--json', 'Print structured statistics').action(
   const stats = await invoke({ name: 'stats' }) as Stats;
   console.log(options.json ? JSON.stringify(stats, null, 2) : formatStats(stats));
 });
-for (const commandName of ['actions', 'tick', 'state', 'outbox', 'reconcile', 'subagents', 'compact'] as const) {
+for (const commandName of ['actions', 'tick', 'state', 'outbox', 'reconcile', 'subagents', 'compact', 'memories'] as const) {
   program.command(commandName).action(async () => {
     console.log(JSON.stringify(await invoke({ name: commandName }), null, 2));
   });
@@ -72,6 +72,9 @@ for (const commandName of ['approve', 'reject'] as const) {
     console.log(JSON.stringify(await invoke({ name: commandName, id: actionId }), null, 2));
   });
 }
+program.command('forget <id>').description('Forget one remembered fact').action(async memoryId => {
+  console.log(JSON.stringify(await invoke({ name: 'forget', id: memoryId }), null, 2));
+});
 program.command('edit <id>')
   .requiredOption('--recipient <recipient>')
   .requiredOption('--body <body>')

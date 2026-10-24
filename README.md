@@ -145,6 +145,7 @@ npm run cli -- outbox           # the fake outbox shows one sent message
 | `npm run cli -- edit <id> --recipient R --body B` | Change a proposal (needs re-approval) |
 | `npm run cli -- reconcile` | Look up receipts for `unknown` sends; never resends |
 | `npm run cli -- subagents` | Helper agents, their status and answers |
+| `npm run cli -- memories` / `forget <id>` | List what the agent remembers; forget one fact |
 | `npm run cli -- compact` | Summarize older chat history now |
 | `npm run cli -- stats [--json]` | Spend and health statistics |
 | `npm run cli -- stop` | Kill switch: stops the service and cancels running work |

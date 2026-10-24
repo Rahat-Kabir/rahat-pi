@@ -310,6 +310,14 @@ input 413. The existing executor remains the sole sender. New HTTP crash tests
 exercise `action_approved` and `after_dispatch`, with one fake outbox row after
 restart/reconciliation and no blind resend.
 
+Memories are part of the live state (`memories`, newest first), so the app updates
+when the agent remembers or forgets something. `POST /api/memories/forget` accepts
+`{id}` and runs the owner `forget` command (also `npm run cli -- forget <id>`;
+`npm run cli -- memories` lists them). An unknown id is an error (409), unlike the
+agent's `memory_forget`, which always reports success. Forgetting deletes the stored
+fact and its search entry; earlier chat history or a compaction summary that
+mentions the fact is not rewritten.
+
 EventSource retries every second and acquires the current durable snapshot; no
 SSE event history/cursor needs persistence. The web command resumes Pi tasks on
 start. `scripts/web-snapshot.ts` (`npm run web:snapshot`) fetches `/api/state` from
@@ -359,9 +367,11 @@ itself. Signed in, the browser sends the cookie on every request. Live updates u
 existing SSE stream; a refused stream (for example after the token file was replaced)
 makes the app check its sign-in again. Remote access (for example Tailscale with HTTPS)
 is not set up yet; adding it also needs `Secure` cookies and its Host name allowed. The manifest and PNG/SVG icons make it installable in Chromium browsers; there
-is no service worker or offline mode. Done so far: chat and approvals. Still open:
-notifications, memories and routines (needs owner commands), activity, removing the
-old page.
+is no service worker or offline mode. A Chat | Memories switch sits above the main
+column. The memories view lists `state.memories` (newest first, with source and save
+time) and forgets one after an inline "Forget this for good?" confirmation. Done so
+far: chat, approvals, memories. Still open: notifications, routines (needs owner
+commands), activity, removing the old page.
 
 ## Sandboxed workspace tools
 

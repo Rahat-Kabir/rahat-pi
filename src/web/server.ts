@@ -229,6 +229,11 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
       sendJson(response, 200, result);
       return;
     }
+    if (path === '/api/memories/forget') {
+      const id = requireString(body, 'id', 200);
+      sendJson(response, 200, await app.dispatch({ name: 'forget', id }));
+      return;
+    }
     throw new HttpError(404, 'Not found');
   }
   const server = createServer((incomingRequest, response) => {

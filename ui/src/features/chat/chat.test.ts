@@ -10,6 +10,7 @@ function stateWith(partial: Partial<WebState>): WebState {
     inbox: { items: [] },
     actions: [],
     subagents: [],
+    memories: [],
     stats: {} as WebState['stats'],
     ...partial,
   };
