@@ -7,11 +7,16 @@ import { App } from '../harness/app.js';
 import { AppDoc } from '../harness/state.js';
 import { readWebState } from './state.js';
 import { renderPage, renderState } from './page.js';
+import { appIsBuilt, defaultAppDirectory, findAppFile, isAppPath } from './app-files.js';
 
 const contentSecurityPolicy = [
   "default-src 'none'",
   "script-src 'self'",
-  "style-src 'unsafe-inline'",
+  // 'unsafe-inline' serves the old page's <style> block and React style attributes.
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self'",
+  "font-src 'self'",
+  "manifest-src 'self'",
   "connect-src 'self'",
   "base-uri 'none'",
   "frame-ancestors 'none'",
@@ -60,7 +65,7 @@ function requireString(body: Record<string, unknown>, name: string, maximumLengt
   return value;
 }
 
-export async function startWebServer(app: App, port = app.config.webPort) {
+export async function startWebServer(app: App, port = app.config.webPort, appDirectory = defaultAppDirectory) {
   const token = randomBytes(32).toString('hex');
   const tokenPath = join(app.config.dataDir, 'web-token');
   writeFileSync(tokenPath, token + '\n', { mode: 0o600 });
@@ -129,6 +134,19 @@ export async function startWebServer(app: App, port = app.config.webPort) {
           response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           response.end(renderPage(state));
         }
+        return;
+      }
+      const pathname = new URL(path ?? '/', 'http://localhost').pathname;
+      if (isAppPath(pathname)) {
+        if (!appIsBuilt(appDirectory)) {
+          throw new HttpError(404, 'App not built; run npm run ui:build');
+        }
+        const appFile = findAppFile(appDirectory, pathname === '/app' ? '/app/' : pathname);
+        if (!appFile) {
+          throw new HttpError(404, 'Not found');
+        }
+        response.writeHead(200, { 'Content-Type': appFile.contentType });
+        response.end(readFileSync(appFile.path));
         return;
       }
       throw new HttpError(404, 'Not found');

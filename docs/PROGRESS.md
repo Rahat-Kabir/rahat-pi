@@ -2,6 +2,20 @@
 
 What changed, step by step, newest first. Each entry says what was built and how it was verified.
 
+## M2 roadmap: the Rahat-PI app
+
+- [x] API contract (`src/web/api-types.ts`) and safe serving of the built app at `/app/`
+- [x] App shell (React + Vite + Tailwind), installable; chat and approvals
+- [ ] Notifications when an approval is needed or a routine finishes
+- [ ] Memories and routines: owner CLI commands first, then endpoints and screens
+- [ ] Activity: tool calls, subagents, costs
+- [ ] Make the app the default UI and remove the old page
+
+### App shell with chat and approvals (2026-10-24)
+`ui/` holds a React app served at `/app/`, typed against a self-contained API contract that a type test keeps in line with the brain.
+Static serving refuses traversal, symlink escapes, and unknown types; the old page at `/` is unchanged.
+Verified: 4 new server tests, 12 app logic tests, typecheck, app build, and an offline browser check (chat, approve, escaped `<script>`, phone width, dark mode).
+
 ### Failed-turn context and settled spending caps (2026-10-24)
 Terminal unanswered turns now leave model context through durable omission edits; original history and crash resume remain intact.
 USD caps count reported actuals plus open/unknown reservations; stats expose each amount and migration retains untraceable legacy reservations.

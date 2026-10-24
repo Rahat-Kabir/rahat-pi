@@ -22,6 +22,7 @@ echo "Linux test run ($(. /etc/os-release && echo "$PRETTY_NAME"), Node $(node -
 mkdir -p "$checkDirectory"
 rsync -a --delete \
   --exclude=/node_modules --exclude=/data --exclude=/.env --exclude=/.git --exclude=/.reference \
+  --exclude=/ui/node_modules --exclude=/ui/dist \
   "$sourceDirectory/" "$checkDirectory/"
 cd "$checkDirectory"
 
@@ -33,10 +34,21 @@ if [ "$(cat node_modules/.rahat-pi-lock-hash 2>/dev/null)" != "$lockHash" ]; the
   echo "$lockHash" > node_modules/.rahat-pi-lock-hash
 fi
 
+uiLockHash="$(sha256sum ui/package-lock.json | cut -d' ' -f1)"
+if [ "$(cat ui/node_modules/.rahat-pi-lock-hash 2>/dev/null)" != "$uiLockHash" ]; then
+  echo "Installing app dependencies (ui/package-lock.json changed)..."
+  npm ci --prefix ui --no-fund --no-audit --loglevel=error || { echo "FAIL: npm ci (ui)"; exit 1; }
+  echo "$uiLockHash" > ui/node_modules/.rahat-pi-lock-hash
+fi
+
 npx tsc --noEmit || { echo "FAIL: typecheck"; exit 1; }
 echo "TYPECHECK OK"
 
-npx vitest run
+# Building the app also type-checks it against the brain's API contract.
+npm run ui:build --silent >/dev/null || { echo "FAIL: app build"; exit 1; }
+echo "APP BUILD OK"
+
+npx vitest run && npm run ui:test --silent
 testExitCode=$?
 if [ "$testExitCode" -eq 0 ]; then
   echo "PASS: safe to commit"

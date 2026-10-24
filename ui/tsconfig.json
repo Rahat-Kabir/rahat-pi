@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "types": ["vite/client"],
+    "paths": {
+      // Types only: `import type { WebState } from '@api'`. The bundler never sees
+      // this path, so a non-type import from the brain fails the build on purpose.
+      "@api": ["../src/web/api-types.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

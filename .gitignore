@@ -1,5 +1,6 @@
 node_modules/
 data/
+ui/dist/
 .npm-cache/
 coverage/
 .reference/

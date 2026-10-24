@@ -174,6 +174,12 @@ cat data/web-token
 **Browser:** open **http://127.0.0.1:8787** (from WSL, your normal Windows browser
 works too), paste the token into **Web token**, and chat.
 
+**New app (in progress):** build it once with `npm ci --prefix ui` and
+`npm run ui:build`, then open **http://127.0.0.1:8787/app/**. It has chat and
+approvals today and replaces the page above once it covers everything. In Chrome,
+Chromium, or Edge you can install it as a desktop app (the install icon in the
+address bar). Firefox cannot install it.
+
 - **The token changes every time you restart `web`.** After a restart, run
   `cat data/web-token` again and paste the new one.
 - Terminal 2 can also send commands to the running agent, for example
@@ -224,10 +230,15 @@ npm test             # offline tests, including real SIGKILL restart tests (Linu
 npm run test:crash   # crash and restart tests only
 npm run typecheck
 npm run test:linux   # Windows only: full Linux suite inside WSL on your current, uncommitted files
+npm run ui:test      # app logic tests
+npm run ui:build     # type-check the app against the API contract and build it into ui/dist/
+npm run ui:dev       # app with live reload at http://localhost:5173/app/ (needs `npm run cli -- web` running)
 ```
 
+The app in `ui/` has its own dependencies: run `npm ci --prefix ui` once.
+
 `test:linux` copies the checkout (without `.env`, `data/`, or `.git`) to `~/rahat-pi-check`
-in WSL and runs the typecheck and all tests there. It needs WSL with Node 22 and
+in WSL and runs the typecheck, the app build, and all tests there. It needs WSL with Node 22 and
 bubblewrap (see "On Windows, use WSL") and never changes your files.
 
 Tests use a fake model provider and a fake outbox; they make no paid calls.
@@ -238,7 +249,8 @@ Tests use a fake model provider and a fake outbox; they make no paid calls.
 | `src/extensions/` | Tools: memory, routines, calendar, web, workspace, subagents |
 | `src/executor/` | Approval rules and the send-once executor |
 | `src/policy/` | Tool allowlist, budgets, and caps |
-| `src/web/` | Local web UI server and page |
+| `src/web/` | Local web server, API contract (`api-types.ts`), and the old page |
+| `ui/` | The app: React + Vite + Tailwind, one folder per feature in `ui/src/features/` |
 | `tests/` | Unit, integration, and `crash/` restart tests |
 
 ## Documentation

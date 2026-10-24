@@ -314,6 +314,34 @@ or live model verification yet; offline HTTP/faux/SIGKILL checks cover
 the data path and escaped HTML. No remote auth, history pagination, payload editor,
 or child-control UI was added. Calendar and outbound sends remain fixtures.
 
+## App (M2, in progress)
+
+`ui/` is a React 19 + TypeScript + Vite 8 + Tailwind 4 app with its own exact-pinned
+`package.json`. It builds static files into `ui/dist/` (git-ignored); the web server
+serves them at `/app/` and the old page stays at `/` until the app replaces it. The
+brain and the app meet only through HTTP. `src/web/api-types.ts` is the contract: it
+imports nothing, so the app type-checks against it without brain code
+(`import type … from '@api'`, a tsconfig path the bundler never resolves, so a runtime
+import from the brain fails the build). It lists only fields the app uses;
+`tests/api-contract.test.ts` fails `tsc` if the brain's real state stops fitting it.
+
+`src/web/app-files.ts` serves only regular files inside the app folder with a known
+extension. The URL path is decoded once, then the resolved and real paths must stay
+inside the folder, so encoded traversal and escaping symlinks get 404. Before
+`npm run ui:build`, `/app/` answers 404 with that hint. CSP adds `'self'` for
+styles, images, fonts, and the manifest; `'unsafe-inline'` styles remain for the old
+page's `<style>` block and React style attributes. Scripts stay `'self'` only.
+
+Safety stays in the brain. The app renders all model, tool, and payload text as React
+text (escaped), never as HTML. Approval cards send the hash of the payload they
+show; approve appears only for `proposed`, reject (cancel) also for `approved`. The
+composer keeps one request ID per unsent text, so retrying an uncertain send is
+admitted once. The token stays in page memory. Live updates use the existing SSE
+stream. The manifest and PNG/SVG icons make it installable in Chromium browsers; there
+is no service worker or offline mode. Done so far: chat and approvals. Still open:
+notifications, memories and routines (needs owner commands), activity, removing the
+old page.
+
 ## Sandboxed workspace tools
 
 `src/extensions/workspace.ts` owns file access and bubblewrap execution. App opens

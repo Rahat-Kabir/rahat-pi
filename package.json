@@ -16,7 +16,10 @@
     "test:crash": "node scripts/check-node.mjs && vitest run tests/crash",
     "test:linux": "node scripts/test-linux.mjs",
     "typecheck": "tsc --noEmit",
-    "web:snapshot": "node scripts/check-node.mjs && tsx --no-warnings=ExperimentalWarning scripts/web-snapshot.ts",
+    "ui:dev": "npm --prefix ui run dev",
+    "ui:build": "npm --prefix ui run build",
+    "ui:test": "npm --prefix ui test",
+    "web:snapshot":"node scripts/check-node.mjs && tsx --no-warnings=ExperimentalWarning scripts/web-snapshot.ts",
     "eval": "node scripts/check-node.mjs && tsx --no-warnings=ExperimentalWarning scripts/eval.ts"
   },
   "dependencies": {
