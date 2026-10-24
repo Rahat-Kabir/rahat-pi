@@ -11,6 +11,11 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
 
+### Readable tool calls in the app (2026-10-24)
+Tool calls show as one plain line each (for example `Searched memory for "tea"`), with the raw arguments folded under it; running tools say what they are doing.
+Thinking is folded under "Thinking" instead of showing as raw JSON with its signature. App-only change; the brain is untouched.
+Verified: 5 new app logic tests and app build; a visual check in an offline preview is pending.
+
 ### Sign in once; every read needs it (2026-10-24)
 The web token now survives restarts; the app signs in once and gets a 400-day HttpOnly, SameSite=Strict cookie, so reloads and the installed app stay signed in.
 Every data route (`/`, `/api/state`, `/api/events`, POSTs) now needs the cookie or `X-Rahat-Token`; before, reads were open to anyone who could reach the port.

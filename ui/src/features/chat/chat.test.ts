@@ -16,12 +16,21 @@ function stateWith(partial: Partial<WebState>): WebState {
 }
 
 describe('chat messages', () => {
-  it('turns text and tool-call blocks into plain text', () => {
+  it('keeps only readable text in the bubble and moves thinking and tool calls aside', () => {
     expect(contentText('hello')).toBe('hello');
-    expect(contentText([
-      { type: 'text', text: 'Looking it up.' },
-      { type: 'toolCall', name: 'memory_search', arguments: { query: 'tea' } },
-    ])).toBe('Looking it up.\nTool: memory_search {\n  "query": "tea"\n}');
+    const state = stateWith({
+      entries: [{ id: 1, kind: 'answer', model: [{ role: 'assistant', content: [
+        { type: 'thinking', thinking: 'The owner asked about tea.', thinkingSignature: 'opaque-signature' },
+        { type: 'thinking', thinking: '', redacted: true, thinkingSignature: 'encrypted' },
+        { type: 'text', text: 'Looking it up.' },
+        { type: 'toolCall', id: 'call-1', name: 'memory_search', arguments: { query: 'tea' } },
+      ] }] }],
+    });
+    const [message] = transcript(state);
+    expect(message.text).toBe('Looking it up.');
+    expect(message.thinking).toBe('The owner asked about tea.');
+    expect(message.toolCalls).toEqual([{ icon: '🔍', summary: 'Searched memory for "tea"', details: '{\n  "query": "tea"\n}' }]);
+    expect(JSON.stringify(message)).not.toContain('signature');
   });
 
   it('keeps markup as text, never as HTML', () => {
@@ -36,9 +45,9 @@ describe('chat messages', () => {
       ],
     });
     expect(transcript(state)).toEqual([
-      { key: '1:0', role: 'user', text: 'Hi' },
-      { key: '2:0', role: 'assistant', text: 'Hello' },
-      { key: '2:1', role: 'tool', text: 'ok' },
+      { key: '1:0', role: 'user', text: 'Hi', thinking: '', toolCalls: [] },
+      { key: '2:0', role: 'assistant', text: 'Hello', thinking: '', toolCalls: [] },
+      { key: '2:1', role: 'tool', text: 'ok', thinking: '', toolCalls: [] },
     ]);
   });
 

@@ -4,6 +4,7 @@ import { Panel } from '../../components/Panel';
 import { Composer } from './Composer';
 import { MessageBubble } from './MessageBubble';
 import { liveAnswer, queuedText, runFailure, transcript } from './messages';
+import { describeRunningTool } from './toolCalls';
 
 export function ChatView({ state }: { state: WebState }) {
   const messages = transcript(state);
@@ -32,7 +33,7 @@ export function ChatView({ state }: { state: WebState }) {
         {answer && <div className="flex"><MessageBubble message={answer} live /></div>}
         {runningTools.map(tool => (
           <p key={tool.callId} className="text-xs text-slate-500 dark:text-slate-400">
-            ⚙ {tool.name} · {tool.status}
+            {describeRunningTool(tool.name)}
           </p>
         ))}
         {state.inbox.items.map(item => (

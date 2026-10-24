@@ -347,7 +347,10 @@ Safety stays in the brain. The app renders all model, tool, and payload text as 
 text (escaped), never as HTML. Approval cards send the hash of the payload they
 show; approve appears only for `proposed`, reject (cancel) also for `approved`. The
 composer keeps one request ID per unsent text, so retrying an uncertain send is
-admitted once. On load the app asks `GET /api/session`; signed out, it shows a
+admitted once. Tool calls show as one plain-language line each (`ui/src/features/chat/toolCalls.ts`,
+for example `Searched memory for "tea"`), with the raw arguments folded under it;
+unknown tools fall back to `Used <name>`. Readable thinking is folded under
+"Thinking"; redacted thinking and signatures are never shown. On load the app asks `GET /api/session`; signed out, it shows a
 one-time sign-in form that posts the token to `POST /api/session` and keeps nothing
 itself. Signed in, the browser sends the cookie on every request. Live updates use the
 existing SSE stream; a refused stream (for example after the token file was replaced)
