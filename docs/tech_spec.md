@@ -104,6 +104,29 @@ blind retry or CLI override. Provider exceptions after entry also remain unknown
 Exactly-once effects here rely on the fake provider's durable unique-key contract;
 this is not a claim about future email providers.
 
+## Unanswered conversation context
+
+`src/harness/conversation-context.ts` reads Pi's terminal `unanswered` submissions.
+Before generation prepares its request, the profile section appends immutable
+`edits: [{target, action: "omit"}]` for the failed user input and its partial
+assistant/tool entries, ending at the next input. System entries remain to preserve
+Pi's positional prompt/tool loadout. Repeated preparation finds existing edits and
+does not append duplicates. Raw durable history is never deleted or rewritten.
+Failed inputs whose omission is committed are remembered in memory per storage and
+conversation, so later requests skip the full-history scan until a new failure
+appears. A terminal turn gains no new entries; after a restart the first request
+rescans once.
+This excludes failures before dispatch, mid-run token/deadline failures, provider
+errors, and terminal aborts from later model requests. Already performed tool effects
+are not rolled back; approvals remain governed by their separate durable records.
+
+A merely crash-interrupted input remains `placed`, so no omission applies and Pi
+resumes its generation/tool checkpoint normally. Manual compaction applies omissions
+before selection; the compaction hook declines an obsolete selection if cleanup
+adds edits after selection. Later selection reads the cleaned context, so failed
+instructions are not carried into a new summary. Existing summaries made before
+this fix cannot be reliably untangled into their original inputs.
+
 ## Subagents (slice 1)
 
 `src/extensions/subagents.ts` provides `subagent_run({task, title?})`. It follows
@@ -115,7 +138,7 @@ answer is returned through that same durable tool task, producing one parent too
 result. A saved answer survives a later deadline; unfinished work times out.
 Exactly-once delivery means one committed parent tool result, not one terminal
 print across repeated CLI requests. Provider work interrupted mid-request may be
-reissued and charged again; reservations are never refunded.
+reissued and charged again; attempts without reported usage keep their full reservation.
 
 The child model is `RAHAT_PI_SUBAGENT_MODEL`, default `anthropic/claude-haiku-5.5` through
 OpenRouter (the main default is `anthropic/claude-sonnet-5.5`). Both exist in pi-ai 1.4.0's
@@ -384,13 +407,18 @@ unattributed spend. Unknown attempts remain counted, with reservations retained.
 A SIGKILL before usage is saved leaves unknown cost. After usage is saved but
 before Pi commits its response, the journal can exceed Pi's ledger; the saved
 charge remains. Recovery reserves a new attempt, since a replay can cost again.
-Reading stats never dispatches a model, refunds, or reconciles charges.
+Reading stats never dispatches a model or changes accounting. Reported usage itself is the durable settlement record.
 
 `App.stats` combines `readStats` with existing subagent status resolution.
 `stats` works standalone and over the owner socket; `--json` returns structured
 values, default output shows USD to six decimals. The web page/state/snapshot
-include the same stats. Breakdowns show today/total actual and reservations per
-role/model; older unattributed models are separate. Tool failures count retained
+include the same stats. Today/total and each role/model expose `actualUsd`,
+`openReservedUsd`, `unknownReservedUsd`, and `countedUsd`. Text output names all four.
+`reservedUsd` remains the gross historical reservation amount for compatibility;
+it is not the amount counted against caps. `unknownRequests` excludes currently-open
+requests. Legacy reservations without request records have no invented role/model;
+they appear in aggregate unknown USD, without an invented request count.
+Older unattributed actual models are separate. Tool failures count retained
 `isError` tool-result messages by name across conversations. Actions include all
 seven statuses, including rejected. Task scans paginate, including terminal tasks:
 `crashed` means records currently carrying a nonzero Pi restart count; `parked`
@@ -401,13 +429,30 @@ owner-task status, including existing tool-error semantics. Stats reads several
 snapshots; active work can advance between them. History scans and the request
 document grow with usage; this is intended for the existing small single-owner store.
 
-Enforcement remains conservative: daily limits use the unchanged
-`dailyReservations` ledger, with no refunds to actual. The optional positive
-`RAHAT_PI_TOTAL_USD_CAP` also limits reservations across all dates in that store;
-it additionally charges any reported cost exceeding its request's reservation.
-It defaults to unset. Admission checks and reservations share one Pi commit.
-Unknown charges stay reserved. Neither catalog prices nor returned usage prove
-an invoice-level cap if provider prices/accounting change.
+Daily and optional lifetime USD caps admit a request only when reported actual
+spend + open reservations + unknown-cost reservations + its worst-case reservation
+fit the cap. Actual overages count in full, for both daily and lifetime caps.
+The request journal and admission checks share one Pi commit. Reported usage is
+saved before returning the response to Pi; `usage ??=` makes settlement idempotent.
+There is no separate subtraction that could be lost or applied twice. A successful
+zero-cost faux response settles to zero. Errors/aborts without usage become unknown;
+startup marks all unreported pre-restart requests unknown before scheduling resumes.
+If marking a finished request fails, the error is logged and the reply still ends:
+the request stays open with its full reservation counted until restart marks it.
+A replay reserves a new attempt while the interrupted attempt remains counted.
+
+Migration is additive within the existing cost document. On first open, sum the
+journal's original reservations per day and subtract them from old `dailyReservations`.
+The nonnegative residual is saved once as `legacyDailyReservations`, retained as
+unknown on its original date (and in lifetime spend). Journal entries with usage
+immediately count their actuals, even if saved before a crash; entries without usage
+remain fully reserved. Pre-journal Pi actuals are saved as `legacyActualUsd` and count
+only toward the lifetime cap, since their dates are unknown. These known actuals
+cannot be associated with unmatched legacy reservations, so both conservatively count.
+Migration and repeated opens cannot release or duplicate the residual. The original
+`dailyReservations` ledger continues recording gross reservations for compatibility;
+enforcement uses the journal and migrated residual instead. Reported/catalog costs
+are not invoice receipts and cannot guarantee an invoice-level cap if pricing changes.
 
 `npm run eval` calls `scripts/eval.ts` / `src/evals/runner.ts`, separately from
 Vitest. Fifteen scripted scenarios run actual App/Pi tools with faux: memory
@@ -434,8 +479,8 @@ still bound the whole run.
 No approval/executor tick or real outbound connector is used. Run stats/report
 retain any failures at the cap rather than retrying around it.
 
-Slice 5 deviations/gaps: no refunds or daily actual-spend reconciliation were
-added. A separate journal is needed because Pi's aggregate ledger has no dates or
+Slice 5 originally retained all reservations; the settled-cost contract above
+supersedes that rule. A separate journal is needed because Pi's aggregate ledger has no dates or
 request roles, and summary usage can be lost before Pi commits it. Historic day/
 role attribution and lifetime process-crash history cannot be reconstructed.
 Faux policy evals prove code boundaries, not natural-language injection resistance.
@@ -452,13 +497,13 @@ Generation hooks in Pi 1.4.0 report thrown errors and continue. Therefore the ac
 Models.streamSimple wrapper awaits `reserveModelRequest` before provider dispatch.
 Pi's persisted `ProviderDoc.sessionId` identifies the requesting conversation;
 parent and child budgets are keyed by their own globally unique submission IDs,
-and all reserve against the same `rahat.app.dailyReservations` ledger. Unknown
+and all reserve against the shared `rahat.costs` request journal and migrated legacy amounts. Unknown
 provider sessions fail closed. Lookup currently scans retained child records.
 It also forwards `maxTokens` (absent from Pi 1.4.0's curated stream settings).
 Token reservations include serialized input/schema UTF-8 bytes, 4096 framing tokens,
 and maximum output tokens. Daily USD reservations use pinned catalog prices and
-maximum output. Failed/interrupted reservations are never refunded, so unknown cost
-is retained conservatively. Pi's usage documents separately retain reported actual
+maximum output. Reported usage settles reservations to actual cost; attempts with
+no reported usage keep their full reservation, so unknown cost stays conservative. Pi's usage documents separately retain reported actual
 usage/cost; reservations are not a billing receipt. Catalog prices can change: use
 an OpenRouter account spending limit for an independent billing cap.
 

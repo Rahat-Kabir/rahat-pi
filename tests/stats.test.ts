@@ -7,7 +7,7 @@ import type { Usage } from '@earendil-works/pi-ai';
 import { App } from '../src/harness/app.js';
 import { BriefingTask } from '../src/extensions/routines.js';
 import { AppDoc } from '../src/harness/state.js';
-import { CostsDoc } from '../src/harness/costs.js';
+import { CostsDoc, recordRequestUsage } from '../src/harness/costs.js';
 import { localDay } from '../src/timezone.js';
 import { configFromEnv } from '../src/config.js';
 import * as modelSetup from '../src/harness/models.js';
@@ -19,7 +19,7 @@ function reportedUsage(actualUsd: number): Usage {
     cost: { input: actualUsd / 2, output: actualUsd / 2, cacheRead: 0, cacheWrite: 0, total: actualUsd },
   };
 }
-function pricedFauxModels(config: ReturnType<typeof offlineConfig>) {
+function pricedFauxModels(config: ReturnType<typeof offlineConfig>, actualUsd = 0.01) {
   const configuration = modelSetup.buildModels(config);
   const originalStream = configuration.models.streamSimple.bind(configuration.models);
   vi.spyOn(configuration.models, 'streamSimple').mockImplementation((model, transcript, options) => {
@@ -27,7 +27,7 @@ function pricedFauxModels(config: ReturnType<typeof offlineConfig>) {
     void (async () => {
       for await (const event of originalStream(model, transcript, options)) {
         if (event.type === 'done') {
-          event.message.usage = reportedUsage(0.01);
+          event.message.usage = reportedUsage(actualUsd);
         }
         stream.push(event);
       }
@@ -48,9 +48,9 @@ describe('cost and operational statistics', () => {
   it('prints empty readable and JSON stats without dispatching a model', async () => {
     const temporaryStorage = temporaryData();
     try {
-      expect((await cli(temporaryStorage.dataDir, ['stats'])).stdout).toContain('Today: actual $0.000000 / reserved $0.000000');
+      expect((await cli(temporaryStorage.dataDir, ['stats'])).stdout).toContain('Today: actual $0.000000 / open $0.000000 / unknown $0.000000 / counted $0.000000');
       const stats = jsonOutput(await cli(temporaryStorage.dataDir, ['stats', '--json']));
-      expect(stats.total).toEqual({ actualUsd: 0, reservedUsd: 0, requests: 0, unknownRequests: 0 });
+      expect(stats.total).toEqual({ actualUsd: 0, reservedUsd: 0, openReservedUsd: 0, unknownReservedUsd: 0, countedUsd: 0, requests: 0, unknownRequests: 0 });
       expect(stats.models).toEqual([]);
       expect(stats.tasks.total).toBe(0);
     } finally {
@@ -77,6 +77,9 @@ describe('cost and operational statistics', () => {
       expect(stats.total.actualUsd).toBeCloseTo(0.07);
       expect(stats.piUsage.models['faux/faux-1'].cost.total).toBeCloseTo(0.07);
       expect(stats.total.unknownRequests).toBe(0);
+      expect(stats.total.openReservedUsd).toBe(0);
+      expect(stats.total.unknownReservedUsd).toBe(0);
+      expect(stats.total.countedUsd).toBeCloseTo(0.07);
       expect(stats.total.reservedUsd).toBeGreaterThan(stats.total.actualUsd);
       expect(stats.subagents).toEqual({ total: 1, completed: 1 });
       await app.close();
@@ -104,7 +107,7 @@ describe('cost and operational statistics', () => {
       await app.dispatch({ name: 'chat', message: 'first day' });
       const previousStats = await app.stats();
       const providerCalls = streamSpy.mock.calls.length;
-      config.totalUsdCap = previousStats.total.reservedUsd + 0.000000001;
+      config.totalUsdCap = previousStats.total.countedUsd + 0.000000001;
       now += 1000;
       await expect(app.dispatch({ name: 'chat', message: 'second day' })).rejects.toThrow('Total USD cap reached');
       expect(streamSpy.mock.calls.length).toBe(providerCalls);
@@ -181,7 +184,7 @@ describe('cost and operational statistics', () => {
     }
   });
 
-  it('keeps unreported failures unknown and records reported error usage without refunding', async () => {
+  it('keeps unreported failures unknown and records reported error usage with settlement', async () => {
     const temporaryStorage = temporaryData();
     const config = offlineConfig(temporaryStorage.dataDir);
     const configuration = modelSetup.buildModels(config);
@@ -204,11 +207,16 @@ describe('cost and operational statistics', () => {
       const firstStats = await app.stats();
       expect(firstStats.total.unknownRequests).toBe(1);
       expect(firstStats.total.actualUsd).toBe(0);
+      expect(firstStats.total.openReservedUsd).toBe(0);
+      expect(firstStats.total.unknownReservedUsd).toBe(firstStats.total.reservedUsd);
+      expect(firstStats.total.countedUsd).toBe(firstStats.total.unknownReservedUsd);
       await expect(app.dispatch({ name: 'chat', message: 'reported' })).rejects.toThrow();
       const stats = await app.stats();
       expect(stats.total.unknownRequests).toBe(1);
       expect(stats.total.requests).toBe(2);
       expect(stats.total.actualUsd).toBeCloseTo(0.03);
+      expect(stats.total.countedUsd).toBeCloseTo(firstStats.total.countedUsd + 0.03);
+      expect(stats.total.openReservedUsd).toBe(0);
       expect(stats.total.reservedUsd).toBeGreaterThan(firstStats.total.reservedUsd);
     } finally {
       await app.close();
@@ -252,6 +260,106 @@ describe('cost and operational statistics', () => {
         ],
       });
       expect((await app.stats()).tasks.parked).toBe(1);
+    } finally {
+      await app.close();
+      temporaryStorage.cleanup();
+    }
+  });
+
+  it('settles many cheap turns while keeping the next request within both remaining caps', async () => {
+    const temporaryStorage = temporaryData();
+    const config = offlineConfig(temporaryStorage.dataDir, {
+      RAHAT_PI_DAILY_USD_CAP: '0.15', RAHAT_PI_TOTAL_USD_CAP: '0.15',
+      RAHAT_PI_COMPACT_AT_TOKENS: '40000',
+    });
+    const configuration = pricedFauxModels(config, 0.001);
+    const setupSpy = vi.spyOn(modelSetup, 'buildModels').mockReturnValue(configuration);
+    const app = await App.open(config);
+    try {
+      for (let turnIndex = 0; turnIndex < 30; turnIndex++) {
+        await app.dispatch({ name: 'chat', message: `cheap turn ${turnIndex}` });
+      }
+      const stats = await app.stats();
+      expect(stats.total.reservedUsd).toBeGreaterThan(config.dailyUsdCap);
+      expect(stats.total.countedUsd).toBeCloseTo(0.03);
+      expect(stats.today.countedUsd).toBeCloseTo(0.03);
+      expect(stats.models[0].total.countedUsd).toBeCloseTo(0.03);
+      expect(stats.total.openReservedUsd).toBe(0);
+      expect(stats.total.unknownReservedUsd).toBe(0);
+      config.dailyUsdCap = 0.031;
+      await expect(app.dispatch({ name: 'chat', message: 'too large for remaining cap' })).rejects.toThrow('Daily USD cap reached');
+      expect((await app.stats()).total).toEqual(stats.total);
+    } finally {
+      await app.close();
+      setupSpy.mockRestore();
+      temporaryStorage.cleanup();
+    }
+  });
+
+  it('shows an open reservation during dispatch and settles reported usage idempotently', async () => {
+    const temporaryStorage = temporaryData();
+    const config = offlineConfig(temporaryStorage.dataDir);
+    const configuration = modelSetup.buildModels(config);
+    const stream = createAssistantMessageEventStream();
+    let notifyDispatched!: () => void;
+    const dispatched = new Promise<void>(resolve => { notifyDispatched = resolve; });
+    vi.spyOn(configuration.models, 'streamSimple').mockImplementationOnce(() => {
+      notifyDispatched();
+      return stream;
+    });
+    const setupSpy = vi.spyOn(modelSetup, 'buildModels').mockReturnValue(configuration);
+    const app = await App.open(config);
+    try {
+      const pendingTurn = app.dispatch({ name: 'chat', message: 'open reservation' });
+      await dispatched;
+      const openStats = await app.stats();
+      expect(openStats.total.openReservedUsd).toBeGreaterThan(0);
+      expect(openStats.total.countedUsd).toBe(openStats.total.openReservedUsd);
+      expect(openStats.total.unknownReservedUsd).toBe(0);
+      const message = fauxAssistantMessage('complete');
+      message.usage = reportedUsage(0.001);
+      stream.push({ type: 'done', reason: 'stop', message });
+      stream.end();
+      await pendingTurn;
+      const settledStats = await app.stats();
+      expect(settledStats.total.openReservedUsd).toBe(0);
+      expect(settledStats.total.countedUsd).toBe(0.001);
+      const costs = await app.harness.snapshot(CostsDoc, context);
+      const requestId = Object.keys(costs!.requests)[0];
+      await recordRequestUsage(app.harness, requestId, reportedUsage(0.001));
+      await recordRequestUsage(app.harness, requestId, reportedUsage(0.001));
+      expect((await app.stats()).total).toEqual(settledStats.total);
+    } finally {
+      stream.end();
+      await app.close();
+      setupSpy.mockRestore();
+      temporaryStorage.cleanup();
+    }
+  });
+
+  it('migrates the legacy ledger once, settles known usage, and retains unmatched reservations', async () => {
+    const temporaryStorage = temporaryData();
+    const config = offlineConfig(temporaryStorage.dataDir);
+    let app = await App.open(config);
+    try {
+      const day = localDay(config.now(), config.timezone);
+      await app.harness.commit(async transaction => {
+        const costs = await transaction.doc(CostsDoc);
+        delete costs.legacyDailyReservations;
+        costs.requests.known = { model: 'faux/faux-1', role: 'main', day, reservedUsd: 0.3, usage: reportedUsage(0.01) };
+        costs.requests.unknown = { model: 'faux/faux-1', role: 'main', day, reservedUsd: 0.2, usage: null };
+        (await transaction.doc(AppDoc)).dailyReservations[day] = 0.9;
+      }, context);
+      await app.close();
+      app = await App.open(config);
+      const stats = await app.stats();
+      expect(stats.total.countedUsd).toBeCloseTo(0.61);
+      expect(stats.today.countedUsd).toBeCloseTo(0.61);
+      expect(stats.total.unknownReservedUsd).toBeCloseTo(0.6);
+      expect(stats.total.openReservedUsd).toBe(0);
+      await app.close();
+      app = await App.open(config);
+      expect((await app.stats()).total).toEqual(stats.total);
     } finally {
       await app.close();
       temporaryStorage.cleanup();

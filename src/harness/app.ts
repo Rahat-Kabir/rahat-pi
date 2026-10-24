@@ -4,9 +4,10 @@ import { processLock } from '@earendil-works/chord/node';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import {
   Harness, createRegistry, defineExtension, section, watchEvents, LiveDoc, CompactionTask, hook,
-  type AgentEvent, type Conversation, type TaskId,
+  type AgentEvent, type Conversation, type TaskId, type Storage,
 } from '@earendil-works/pi-durable';
 import { openPiStorage } from './storage.js';
+import { omitUnansweredTurns } from './conversation-context.js';
 import { initializeCosts } from './costs.js';
 import { readStats } from './stats.js';
 import { AppDoc } from './state.js';
@@ -58,6 +59,7 @@ export class App {
     readonly root: Conversation,
     private releaseLock: () => Promise<void>,
     private memoryIndex: MemoryIndex,
+    private storage: Storage,
   ) {
     this.sender = new FakeSender(join(config.dataDir, 'fake-provider.sqlite'));
     this.executor = new Executor(harness, this.sender, config.now, () => this.stopRequested);
@@ -84,6 +86,7 @@ export class App {
       if (config.compactAtTokens >= mainModel.contextWindow) {
         throw new Error('RAHAT_PI_COMPACT_AT_TOKENS must be below the main model context window');
       }
+      const storage = await openPiStorage(join(config.dataDir, 'pi.sqlite'));
       const guardedModels = capModelOutput(
         models,
         config.maxOutputTokens,
@@ -94,7 +97,11 @@ export class App {
         name: 'rahat.personal',
         tools,
         tasks: [BriefingTask],
-        sections: [section('profile', () => systemProfile(config))],
+        sections: [section('profile', async input => {
+          // Section rendering precedes Pi's request cutoff, so durable omissions enter that request.
+          await omitUnansweredTurns(harness!, storage, input.conversationId);
+          return systemProfile(config);
+        })],
         hooks: [
           ...limitHooks(config, () => harness!),
           hook(CompactionTask, { beforeCompact: async (_compaction, hookRuntime, hookContext) => {
@@ -102,11 +109,15 @@ export class App {
             if (conversation?.owner !== undefined) {
               return { decline: true };
             }
+            if (await omitUnansweredTurns(harness!, storage, hookRuntime.conversationId)) {
+              // Selection pinned an older tail; retry compaction with the durable edits included.
+              return { decline: true };
+            }
             return undefined;
           } }),
         ],
       }));
-      harness = await Harness.open(await openPiStorage(join(config.dataDir, 'pi.sqlite')), {
+      harness = await Harness.open(storage, {
         models: budgetCompactionModels(
           guardedModels,
           summaryModel,
@@ -137,7 +148,7 @@ export class App {
       // Config is authoritative on reopen, too (root options only apply at first creation).
       await root.configure({ model: modelRef, tools }, context);
       await initializeCosts(harness);
-      const app = new App(config, harness, root, releaseLock, memoryIndex);
+      const app = new App(config, harness, root, releaseLock, memoryIndex, storage);
       await app.executor.recover();
       app.startWatchdog();
       return app;
@@ -286,6 +297,7 @@ export class App {
   }
 
   private async executeCompaction() {
+    await omitUnansweredTurns(this.harness, this.storage, this.root.id);
     const liveConversation = await this.harness.snapshot(LiveDoc, this.root.id, context);
     const taskId = liveConversation?.compactions?.[0]?.taskId ?? await this.root.compact(compactionInstructions, context);
     const settledTask = await this.harness.waitForTask(taskId, context);

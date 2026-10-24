@@ -52,8 +52,11 @@ Safe crash recovery and trustworthy approvals are the main constraint.
 - Budget checks run inside the Models wrapper (`capModelOutput`), before the
   provider is called. Pi 1.4 only reports errors thrown from generation hooks
   and keeps generating, so a hook cannot block a request.
-- Model reservations are never refunded. An interrupted request may still be
-  billed, so its reserved USD stays counted.
+- USD caps count settled reported actual spend plus open and unknown-cost
+  reservations. Saving usage settles a request idempotently; errors or interrupted
+  requests without usage retain their full reservation because they may be billed.
+- Terminal unanswered inputs and their partial assistant/tool entries are omitted
+  from model context through immutable Pi edits; history and resumable inputs stay stored.
 - A send that ends `unknown` is never resent. Reconcile only looks up the
   outbox receipt; no receipt cannot prove the send failed.
 - `workspace_shell` is `replay: "unsafe"`: after a crash the interrupted

@@ -28,8 +28,9 @@ with models through [OpenRouter](https://openrouter.ai/).
   cover memory, routines, approvals, sends, subagents, compaction, and the shell.
 - **Spending caps.** Every model request reserves its worst-case cost before it
   is sent: per-message token and tool-call limits, a wall-clock deadline, a
-  daily USD cap, and an optional lifetime cap. Reservations are never refunded,
-  because an interrupted request may still be billed.
+  daily USD cap, and an optional lifetime cap. Reported usage settles each
+  reservation to actual cost. Open requests and requests without reported usage
+  keep their full reservations counted, including after a crash.
 - **Untrusted content stays data.** Web pages, memories, and calendar text are
   labeled as data, never instructions.
 - **Sandboxed shell.** Workspace commands run in [bubblewrap](https://github.com/containers/bubblewrap)
@@ -265,7 +266,7 @@ Tests use a fake model provider and a fake outbox; they make no paid calls.
 - Calendar and sends are fixtures; no real connectors yet.
 - Timezones with daylight saving time are not supported yet (routines assume 24-hour days).
 - No web search, only fetching a known URL.
-- Cost reservations are deliberately pessimistic, so caps trigger well before real spend reaches them.
+- Each request must fit the remaining cap at its worst-case cost; reported usage releases its reservation. Unknown charges remain fully reserved.
 
 ## License
 

@@ -34,6 +34,17 @@ export function buildModels(config: Config) {
   return { models, modelRef: { provider: 'openrouter', modelId: config.model } };
 }
 
+// A failed settlement must never hang or crash the reply. Recovery is already safe:
+// the request stays "open" with its full reservation counted, and restart marks it unknown.
+async function finishAccounting(accounting: DispatchAccounting | void) {
+  try {
+    await accounting?.finish();
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : String(error);
+    console.error(`Cost settlement failed; the full reservation stays counted: ${errorText}`);
+  }
+}
+
 // Pi 1.4's settings omit maxTokens. Enforce it at the real Models request boundary.
 type StreamSimpleArguments = Parameters<Models['streamSimple']>;
 type CompleteSimpleArguments = Parameters<Models['completeSimple']>;
@@ -49,8 +60,9 @@ export function capModelOutput(models: Models, maxOutputTokens: number, beforeDi
         ) => {
           const guardedStream = createAssistantMessageEventStream();
           void (async () => {
+            let accounting: DispatchAccounting | void = undefined;
             try {
-              const accounting = await beforeDispatch(model, transcript, options?.sessionId);
+              accounting = await beforeDispatch(model, transcript, options?.sessionId);
               if (options?.signal?.aborted) {
                 throw new Error('Model request cancelled before dispatch');
               }
@@ -62,7 +74,7 @@ export function capModelOutput(models: Models, maxOutputTokens: number, beforeDi
                 if (event.type === 'done') {
                   await accounting?.recordUsage(event.message.usage);
                 }
-                if (event.type === 'error' && event.error.usage.totalTokens > 0) {
+                if (event.type === 'error' && (event.error.usage.totalTokens > 0 || event.error.usage.cost.total > 0)) {
                   await accounting?.recordUsage(event.error.usage);
                 }
                 guardedStream.push(event);
@@ -78,6 +90,7 @@ export function capModelOutput(models: Models, maxOutputTokens: number, beforeDi
               };
               guardedStream.push({ type: 'error', reason: 'error', error: errorMessage });
             } finally {
+              await finishAccounting(accounting);
               guardedStream.end();
             }
           })();
@@ -106,16 +119,20 @@ export function budgetCompactionModels(
           options: CompleteSimpleArguments[2],
         ) => {
           const accounting = await beforeDispatch(summaryModel, transcript, options?.sessionId);
-          options?.signal?.throwIfAborted();
-          crashAt('compaction_started');
-          const cappedOptions = { ...options, maxTokens: maxOutputTokens };
-          const summary = await modelRegistry.completeSimple(summaryModel, transcript, cappedOptions);
-          // Record usage for any finished summary, and for a failed one only if tokens were billed.
-          if ((summary.stopReason !== 'error' && summary.stopReason !== 'aborted') || summary.usage.totalTokens > 0) {
-            await accounting?.recordUsage(summary.usage);
+          try {
+            options?.signal?.throwIfAborted();
+            crashAt('compaction_started');
+            const cappedOptions = { ...options, maxTokens: maxOutputTokens };
+            const summary = await modelRegistry.completeSimple(summaryModel, transcript, cappedOptions);
+            // Record usage for any finished summary, and for a failed one only if tokens were billed.
+            if ((summary.stopReason !== 'error' && summary.stopReason !== 'aborted') || summary.usage.totalTokens > 0 || summary.usage.cost.total > 0) {
+              await accounting?.recordUsage(summary.usage);
+            }
+            crashAt('compaction_summary_ready');
+            return summary;
+          } finally {
+            await finishAccounting(accounting);
           }
-          crashAt('compaction_summary_ready');
-          return summary;
         };
       }
       const propertyValue = Reflect.get(modelRegistry, propertyName, modelRegistry);

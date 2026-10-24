@@ -24,14 +24,22 @@
 - [x] Five SIGKILL/restart demos, offline unit/integration/service tests, typecheck
 
 ## Log
+### Failed-turn context and settled spending caps (2026-10-24)
+Terminal unanswered turns now leave model context through durable omission edits; original history and crash resume remain intact.
+USD caps count reported actuals plus open/unknown reservations; stats expose each amount and migration retains untraceable legacy reservations.
+Verified offline: typecheck, full test suite including SIGKILL recovery, and all 15 evals; no live calls or dependencies added.
+Review fixes: a failed cost-settlement save is logged instead of hanging the reply stream, and the
+failed-turn cleanup remembers handled inputs so it stops re-reading full history on every request.
+The "deadline" omission test fails on plain Windows (timing) with or without these fixes; it passes on Linux.
+
 ### Claude 5.5 model defaults (2026-10-24)
 Defaults are now `anthropic/claude-sonnet-5.5` (main) and `anthropic/claude-haiku-5.5` (subagents
 and summaries), both tested live in chat; code, `.env.example`, README, and tests updated.
 The opt-in live eval now defaults to Haiku 5.5 for all three roles with 8000 output / 300000 run
 tokens (USD 0.25 cap unchanged). That live eval has not been re-run with the new models.
 Code defaults now match `.env.example`: output 8000, run tokens 300000, compaction at 40000.
-Tests pin the old smaller limits in `tests/helpers.ts`. The USD 5/day cap stays: it counts
-pessimistic reservations (about 18x real spend in live use), so $1 would block normal use.
+Tests pin the old smaller limits in `tests/helpers.ts`. The USD 5/day default stays; the later spending-cap fix above replaces permanent
+pessimistic reservations with settled actuals plus open/unknown reservations.
 
 ### Linux tests from Windows (2026-10-24)
 `npm run test:linux` copies the current checkout (no `.env`, `data/`, `.git`) to `~/rahat-pi-check`

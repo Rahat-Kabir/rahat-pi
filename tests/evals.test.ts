@@ -62,7 +62,7 @@ it('fixes live evals to four tasks and USD 0.25 with a faux-only test substitute
     expect(report.mode).toBe('live');
     expect(report.results.map(result => result.name)).toEqual(liveCases.map(evaluationCase => evaluationCase.name));
     expect(report.capUsd).toBe(0.25);
-    expect(report.stats.total.reservedUsd).toBeLessThanOrEqual(0.25);
+    expect(report.stats.total.countedUsd).toBeLessThanOrEqual(0.25);
   } finally {
     openSpy.mockRestore();
     temporaryStorage.cleanup();

@@ -94,3 +94,30 @@ describe('M1 SIGKILL and real-process restart demos', () => {
     }
   });
 });
+
+it('resumes a crash-interrupted input instead of omitting it as an unanswered turn', async () => {
+  const temporaryStorage = temporaryData();
+  try {
+    const message = toolMessage('memory_write', { content: 'crash resume sentinel', source: 'owner:cli' });
+    expect((await cli(temporaryStorage.dataDir, ['chat', '--message', message], {
+      RAHAT_PI_CRASH_AT: 'memory_written',
+    })).signal).toBe('SIGKILL');
+    await cli(temporaryStorage.dataDir, ['tick']);
+    const { App } = await import('../../src/harness/app.js');
+    const { offlineConfig } = await import('../helpers.js');
+    const { BACKGROUND_CONTEXT: context } = await import('@earendil-works/chord/context');
+    const app = await App.open(offlineConfig(temporaryStorage.dataDir));
+    try {
+      const activeContext = await app.root.context(context);
+      expect(JSON.stringify(activeContext.messages)).toContain('crash resume sentinel');
+      expect(activeContext.entries.some(entry => entry.kind === 'rahat.unanswered-context')).toBe(false);
+      const state = await app.dispatch({ name: 'state' }) as AppState;
+      expect(Object.values(state.memories)).toHaveLength(1);
+      expect(activeContext.messages.at(-1)?.role).toBe('assistant');
+    } finally {
+      await app.close();
+    }
+  } finally {
+    temporaryStorage.cleanup();
+  }
+});

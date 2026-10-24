@@ -3,7 +3,7 @@ import { App } from '../../src/harness/app.js';
 import { cli, offlineConfig, temporaryData, toolMessage } from '../helpers.js';
 
 it.each(['compaction_started', 'compaction_summary_ready'])(
-  'retains known and unknown costs after SIGKILL at %s without refunding or recounting on inspection',
+  'retains known and unknown costs after SIGKILL at %s with settlement and no recounting on inspection',
   async crashPoint => {
     const temporaryStorage = temporaryData();
     const config = offlineConfig(temporaryStorage.dataDir, { RAHAT_PI_COMPACT_AT_TOKENS: '8000' });
@@ -19,6 +19,13 @@ it.each(['compaction_started', 'compaction_summary_ready'])(
       expect(interruptedStats.total.requests).toBe(previousStats.total.requests + 1);
       expect(interruptedStats.total.reservedUsd).toBeGreaterThan(previousStats.total.reservedUsd);
       expect(interruptedStats.total.unknownRequests).toBe(crashPoint === 'compaction_started' ? 1 : 0);
+      expect(interruptedStats.total.openReservedUsd).toBe(0);
+      if (crashPoint === 'compaction_started') {
+        expect(interruptedStats.total.unknownReservedUsd).toBeGreaterThan(0);
+      } else {
+        expect(interruptedStats.total.unknownReservedUsd).toBe(0);
+        expect(interruptedStats.total.countedUsd).toBe(interruptedStats.total.actualUsd);
+      }
       expect(interruptedStats.tasks.crashed).toBeGreaterThanOrEqual(1);
       expect(await interrupted.stats()).toEqual(interruptedStats);
       await interrupted.close();
@@ -28,6 +35,8 @@ it.each(['compaction_started', 'compaction_summary_ready'])(
         const recoveredStats = await recovered.stats();
         expect(recoveredStats.total.requests).toBe(interruptedStats.total.requests + 1);
         expect(recoveredStats.total.unknownRequests).toBe(interruptedStats.total.unknownRequests);
+        expect(recoveredStats.total.openReservedUsd).toBe(0);
+        expect(recoveredStats.total.unknownReservedUsd).toBe(interruptedStats.total.unknownReservedUsd);
         expect(recoveredStats.total.reservedUsd).toBeGreaterThan(interruptedStats.total.reservedUsd);
         await recovered.dispatch({ name: 'tick' });
         expect((await recovered.stats()).total).toEqual(recoveredStats.total);

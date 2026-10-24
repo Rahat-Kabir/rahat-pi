@@ -5,7 +5,7 @@ import { ToolTask, LiveDoc, ProviderDoc, hook, type Harness, type ConversationId
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import type { Model, Context as ModelContext } from '@earendil-works/pi-ai';
 import type { Config } from '../config.js';
-import { CostsDoc, recordRequestUsage } from '../harness/costs.js';
+import { CostsDoc, recordRequestUsage, finishRequest, countedSpend } from '../harness/costs.js';
 import { localDay } from '../timezone.js';
 import { AppDoc, type RunBudget } from '../harness/state.js';
 import { SubagentsDoc, childDeadlineReached } from '../extensions/subagents.js';
@@ -95,18 +95,12 @@ export async function reserveModelRequest(
     }
     const reservationDay = localDay(config.now(), config.timezone);
     const dailyReservedUsd = state.dailyReservations[reservationDay] ?? 0;
-    if (dailyReservedUsd + usdReservation > config.dailyUsdCap) {
+    const costs = await transaction.doc(CostsDoc);
+    if (countedSpend(costs, reservationDay) + usdReservation > config.dailyUsdCap) {
       throw new Error('Daily USD cap reached');
     }
-    const costs = await transaction.doc(CostsDoc);
-    const totalReservedUsd = Object.values(state.dailyReservations).reduce((total, reservedUsd) => total + reservedUsd, 0);
-    // A request can report more than was reserved; that overage also counts toward the lifetime cap.
-    const reportedOverageUsd = Object.values(costs.requests).reduce(
-      (total, request) => total + Math.max(0, (request.usage?.cost.total ?? 0) - request.reservedUsd),
-      0,
-    );
     if (config.totalUsdCap !== undefined
-      && totalReservedUsd + reportedOverageUsd + usdReservation > config.totalUsdCap) {
+      && countedSpend(costs) + usdReservation > config.totalUsdCap) {
       throw new Error('Total USD cap reached');
     }
     costs.requests[requestId] = {
@@ -115,13 +109,15 @@ export async function reserveModelRequest(
       day: reservationDay,
       reservedUsd: usdReservation,
       usage: null,
+      status: 'open',
     };
-    // Never refund reservations: interrupted requests can still incur an unknown charge.
+    // Retain the gross ledger for compatibility; enforcement uses settled request costs.
     runBudget.tokensReserved += tokenReservation;
     state.dailyReservations[reservationDay] = dailyReservedUsd + usdReservation;
   }, context);
   return {
     isChild: subagentRun !== undefined,
+    finish: () => finishRequest(harness, requestId),
     recordUsage: (usage: import('@earendil-works/pi-ai').Usage) => recordRequestUsage(harness, requestId, usage),
   };
 }

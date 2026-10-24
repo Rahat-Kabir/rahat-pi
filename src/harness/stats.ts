@@ -1,18 +1,32 @@
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import type { Harness, Cursor } from '@earendil-works/pi-durable';
 import { AppDoc } from './state.js';
-import { CostsDoc, type RequestCost } from './costs.js';
+import { CostsDoc, countedSpend, type RequestCost } from './costs.js';
 import { localDay } from '../timezone.js';
 
-type Spend = { actualUsd: number; reservedUsd: number; requests: number; unknownRequests: number };
+type Spend = {
+  actualUsd: number;
+  reservedUsd: number;
+  openReservedUsd: number;
+  unknownReservedUsd: number;
+  countedUsd: number;
+  requests: number;
+  unknownRequests: number;
+};
 function emptySpend(): Spend {
-  return { actualUsd: 0, reservedUsd: 0, requests: 0, unknownRequests: 0 };
+  return { actualUsd: 0, reservedUsd: 0, openReservedUsd: 0, unknownReservedUsd: 0, countedUsd: 0, requests: 0, unknownRequests: 0 };
 }
 function addRequest(spend: Spend, request: RequestCost) {
   spend.reservedUsd += request.reservedUsd;
   spend.requests += 1;
+  spend.countedUsd += request.usage?.cost.total ?? request.reservedUsd;
   if (request.usage === null) {
-    spend.unknownRequests += 1;
+    if (request.status === 'open') {
+      spend.openReservedUsd += request.reservedUsd;
+    } else {
+      spend.unknownRequests += 1;
+      spend.unknownReservedUsd += request.reservedUsd;
+    }
   } else {
     spend.actualUsd += request.usage.cost.total;
   }
@@ -46,6 +60,16 @@ export async function readStats(harness: Harness, now: number, timezone: string)
   total.actualUsd += unattributedActualUsd;
   total.reservedUsd = Object.values(state?.dailyReservations ?? {}).reduce((sum, reservedUsd) => sum + reservedUsd, 0);
   today.reservedUsd = state?.dailyReservations[day] ?? 0;
+  for (const [reservationDay, reservedUsd] of Object.entries(costs?.legacyDailyReservations ?? {})) {
+    total.unknownReservedUsd += reservedUsd;
+    if (reservationDay === day) {
+      today.unknownReservedUsd += reservedUsd;
+    }
+  }
+  if (costs) {
+    today.countedUsd = countedSpend(costs, day);
+    total.countedUsd = countedSpend(costs);
+  }
   const tasks = { total: 0, crashed: 0, parked: 0, aborted: 0, faulted: 0 };
   const inspection = await harness.inspect(context);
   tasks.parked = inspection.tasks.filter(task => task.state.kind === 'blocked' && task.state.reason === 'restart_limit').length;
@@ -96,7 +120,7 @@ export async function readStats(harness: Harness, now: number, timezone: string)
   return {
     day,
     timezone,
-    enforcement: 'Conservative reservations; no refunds. Actuals are reported usage, not invoice receipts.',
+    enforcement: 'Caps count reported actual spend + open reservations + unknown-cost reservations. Reported usage is not an invoice receipt; legacy actuals count only toward the total cap.',
     today,
     total,
     models: Object.values(models).sort((first, second) => `${first.role}:${first.model}`.localeCompare(`${second.role}:${second.model}`)),
@@ -111,15 +135,17 @@ export async function readStats(harness: Harness, now: number, timezone: string)
 export type Stats = Awaited<ReturnType<typeof readStats>> & { subagents: Record<string, number> };
 export function formatStats(stats: Stats) {
   const money = (amount: number) => `$${amount.toFixed(6)}`;
+  const formatSpend = (spend: Spend) => `actual ${money(spend.actualUsd)} / open ${money(spend.openReservedUsd)}`
+    + ` / unknown ${money(spend.unknownReservedUsd)} / counted ${money(spend.countedUsd)}`;
   const lines = [
     `Spend (USD; ${stats.day}, ${stats.timezone})`,
-    `Today: actual ${money(stats.today.actualUsd)} / reserved ${money(stats.today.reservedUsd)}`,
-    `Total: actual ${money(stats.total.actualUsd)} / reserved ${money(stats.total.reservedUsd)}`,
+    `Today: ${formatSpend(stats.today)}`,
+    `Total: ${formatSpend(stats.total)}`,
     `Unknown request costs: ${stats.total.unknownRequests}; unattributed actual: ${money(stats.unattributedActualUsd)}`,
-    'Role / model: today actual / reserved; total actual / reserved',
+    'Role / model: today and total actual / open / unknown / counted',
     ...stats.models.map(model => {
-      const todaySpend = `${money(model.today.actualUsd)} / ${money(model.today.reservedUsd)}`;
-      const totalSpend = `${money(model.total.actualUsd)} / ${money(model.total.reservedUsd)}`;
+      const todaySpend = formatSpend(model.today);
+      const totalSpend = formatSpend(model.total);
       return `${model.role} / ${model.model}: ${todaySpend}; ${totalSpend}`;
     }),
     `Durable tasks: ${JSON.stringify(stats.tasks)}`,
