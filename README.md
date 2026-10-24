@@ -150,13 +150,38 @@ npm run cli -- outbox           # the fake outbox shows one sent message
 | `npm run demo` | Free offline walkthrough of memory, approvals, and send-once |
 | `npm run eval` | 15 free offline scenario checks with a JSON report |
 
-## Web UI
+## Run the full agent (service + web UI)
 
-`npm run cli -- web` serves a page on `127.0.0.1` only. Paste the token from
-`data/web-token` to send messages or approve actions; the token changes on every
-start. Approval buttons are bound to the payload hash you see. Do not expose
-this port publicly: page reads are not token-protected, so other users on the
-same machine can view them.
+Needs Linux, macOS, or WSL on Windows (see Requirements). Use two terminals.
+
+**Terminal 1: start the agent** and leave it running. This runs the scheduler,
+the approval executor, and the web page:
+
+```bash
+cd rahat-pi
+npm run cli -- web
+```
+
+**Terminal 2: get the web token.** It is a random password that protects sending
+messages and approving actions:
+
+```bash
+cd rahat-pi
+cat data/web-token
+```
+
+**Browser:** open **http://127.0.0.1:8787** (from WSL, your normal Windows browser
+works too), paste the token into **Web token**, and chat.
+
+- **The token changes every time you restart `web`.** After a restart, run
+  `cat data/web-token` again and paste the new one.
+- Terminal 2 can also send commands to the running agent, for example
+  `npm run cli -- chat`, `npm run cli -- actions`, or `npm run cli -- stats`.
+- To stop: press `Ctrl+C` in terminal 1, or run `npm run cli -- stop`.
+
+Approval buttons are bound to the payload hash you see. The page listens only on
+`127.0.0.1`. Do not expose this port publicly: page reads are not token-protected,
+so other users on the same machine can view them.
 
 ## Configuration
 
