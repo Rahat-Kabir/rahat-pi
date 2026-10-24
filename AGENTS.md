@@ -24,8 +24,8 @@ Safe crash recovery and trustworthy approvals are the main constraint.
 
 ## Docs
 
-- `docs/VISION.md` — purpose and success criteria.
-- `docs/PROGRESS.md` — roadmap checklist + ~3 lines per shipped feature.
+- `docs/VISION.md` — purpose and why Pi Durable.
+- `docs/PROGRESS.md` — step-by-step log, newest first, ~3 lines per change.
 - `docs/tech_spec.md` — as-built architecture, contracts, and limitations.
 - `docs/testing.md` — offline checks and separately approved live checks
   (local only: git-ignored, not published).

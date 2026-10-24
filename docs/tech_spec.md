@@ -1,4 +1,4 @@
-# As-built architecture — M1 + subagents + compaction + web + workspace + costs/evals + research
+# As-built architecture
 
 Verified with Node 22.23.4. Direct dependencies are exact-pinned in package.json and
 package-lock.json: Pi Durable, pi-ai, and Chord **1.4.0**, commander 15.0.0,
@@ -50,7 +50,7 @@ This prevents instruction promotion; it cannot guarantee a model ignores injecti
 Both Pi's store and memory FTS use Node's built-in `node:sqlite`. It supplies FTS5
 on the verified Node version, so better-sqlite3 is unnecessary. The FTS index is
 in-memory and rebuilt for each search: losing it cannot lose facts or expose a
-forgotten fact. This is deliberately small-scale M1 behavior.
+forgotten fact. This is deliberately small-scale for now.
 
 ## Routines
 
@@ -70,7 +70,7 @@ ordinary scheduling jitter below a minute still runs. Pause/delete disable the
 routine; the watchdog aborts its durable task. Delete retains audit records.
 Stop aborts all background tasks; service start/tick rearms enabled terminal timers.
 An explicitly aborted in-flight briefing is marked failed and is not rerun for
-that occurrence. Changing the prompt requires creating a new routine in M1.
+that occurrence. Changing the prompt requires creating a new routine.
 
 `RAHAT_PI_NOW` fixes the application/Pi clock for restart tests. Sleep deadlines and
 occurrence IDs use that clock; real wall deadlines are also enforced. All processes
@@ -127,7 +127,7 @@ adds edits after selection. Later selection reads the cleaned context, so failed
 instructions are not carried into a new summary. Existing summaries made before
 this fix cannot be reliably untangled into their original inputs.
 
-## Subagents (slice 1)
+## Subagents
 
 `src/extensions/subagents.ts` provides `subagent_run({task, title?})`. It follows
 Pi 1.4.0 example 22: the main conversation's tool task owns a child conversation.
@@ -151,7 +151,7 @@ the environment affects new children. Children receive the task, inherited profi
 and their own instructions/history, without copying the parent's transcript.
 
 The child tool allowlist is `memory_search`, `calendar_list_events`, and
-`web_fetch` (added in slice 6).
+`web_fetch` (added with web research).
 `beforeTool` also checks Pi's ownership record, so accidentally re-enabling tools
 cannot permit mutations or grandchildren. The creation boundary independently
 rejects delegation from task-owned conversations. The registry retains the policy
@@ -175,10 +175,10 @@ and statuses derived from owner tool tasks (`running`, `completed`, `aborted`,
 `failed`, or `faulted`). Pi can report a tool's error result as task-completed;
 a terminal tool without a saved child answer is listed as failed. There is no
 background spawn/send API, persistent named worker, individual stop command, or
-history pruning in this slice. Foreground ownership makes the existing stop
+history pruning yet. Foreground ownership makes the existing stop
 cascade sufficient; no additional reporter task is needed.
 
-## Compaction (slice 2)
+## Compaction
 
 `src/harness/app.ts` enables Pi 1.4.0's built-in `CompactionTask` for the main
 model. At generation preparation, Pi blocks above `RAHAT_PI_COMPACT_AT_TOKENS`
@@ -233,13 +233,13 @@ A cap/deadline may prevent completion while preserving history. Incomplete, empt
 tool-calling, or failed summaries are not placed by Pi. The two SIGKILL tests verify
 one summary, every original entry exactly once, retained memory, and continued chat.
 
-Slice 2 deviations: blocking automatic compaction was chosen over background work
+Compaction deviations: blocking automatic compaction was chosen over background work
 so it shares the active run's budget and deadline. Manual compaction uses the same
 recent-context policy, so a short conversation may be a no-op. No history pruning,
 summary editing, or live provider validation was added. Output-limit failures may
 require a larger approved `RAHAT_PI_MAX_OUTPUT_TOKENS`; no partial summary is used.
 
-## Local web UI (slice 3)
+## Local web UI
 
 `rahat-pi web` calls `runService(config, true)`: the same App, scheduler, executor,
 and Unix owner socket, plus `src/web/server.ts` using built-in `node:http`.
@@ -306,20 +306,20 @@ the running server and uses the same renderer to save `<dataDir>/web-snapshot.ht
 without scripts or token. Offline tests also leave a representative snapshot in
 `data/web-snapshot.html`; snapshots contain personal conversation/action data.
 
-Slice 3 deviations and gaps: the dedicated `web` command was chosen from the two
+Web UI deviations and gaps: the dedicated `web` command was chosen from the two
 allowed designs; `run` itself does not expose HTTP. SSE uses complete state frames,
 not deltas. The transcript follows Pi's active view after compaction, rather than
 browsing every historical entry retained in storage. There is no browser automation
-or live model verification in this slice; offline HTTP/faux/SIGKILL checks cover
+or live model verification yet; offline HTTP/faux/SIGKILL checks cover
 the data path and escaped HTML. No remote auth, history pagination, payload editor,
 or child-control UI was added. Calendar and outbound sends remain fixtures.
 
-## Sandboxed workspace tools (slice 4)
+## Sandboxed workspace tools
 
 `src/extensions/workspace.ts` owns file access and bubblewrap execution. App opens
 one workspace at `<real dataDir>/workspace/` and registers `workspace_list`,
 `workspace_read`, `workspace_write`, and `workspace_shell` as sequential main-agent
-tools. The code allowlist admits all four. Children retain memory search, Calendar reads, and (since slice 6) web fetch; the ownership hook rejects all workspace tools even if their
+tools. The code allowlist admits all four. Children retain memory search, Calendar reads, and web fetch; the ownership hook rejects all workspace tools even if their
 schemas are accidentally enabled. No database formats or existing CLI commands changed.
 
 File paths are relative to the workspace. Absolute paths and traversal outside
@@ -368,7 +368,7 @@ also prohibits automatic retries. Read/list use `replay: "safe"`. Write also use
 safe replay: it replaces the entire file with the same durable arguments, so a
 crash during replacement is repaired by repeating that content. It is not append.
 
-Slice 4 deviations/gaps: custom tools use `defineTool` rather than installing Pi's
+Workspace deviations/gaps: custom tools use `defineTool` rather than installing Pi's
 host `CodingTools`/`NodeExecutionEnv`, whose cwd alone is not isolation. No new
 npm dependency, model, or provider was added. The mounts assume a merged-usr
 Linux layout; unsupported bubblewrap/kernel setups fail closed. The owner must not
@@ -379,7 +379,7 @@ call returns. File writes are whole-content replacement, not atomic rename or
 power-loss-durable storage. Shell writes have no disk, memory, or process quotas;
 the namespace sandbox shares the host kernel. No live model calls were run.
 
-## Cost tracking, stats, and evals (slice 5)
+## Cost tracking, stats, and evals
 
 `src/policy/limits.ts::reserveModelRequest` commits a `rahat.costs` request alongside
 the existing daily reservation, before dispatch. `src/harness/costs.ts` defines
@@ -399,7 +399,7 @@ including summary attempts and tool usage. Stats exposes that ledger as `piUsage
 Faux reports real token estimates but USD 0; tests inject explicit USD values at
 its response boundary to verify nonzero accounting without paid calls.
 
-The initial cost document snapshots pre-slice Pi model totals. `readStats` adds
+The initial cost document snapshots Pi model totals from before cost tracking existed. `readStats` adds
 those legacy costs (and any excess Pi usage not in the journal) as unattributed
 actual spend; it never fabricates their day or role. Today's actual is the known
 journal spend reserved on today's local date. Total actual combines journal and
@@ -479,7 +479,7 @@ still bound the whole run.
 No approval/executor tick or real outbound connector is used. Run stats/report
 retain any failures at the cap rather than retrying around it.
 
-Slice 5 originally retained all reservations; the settled-cost contract above
+Cost tracking originally retained all reservations; the settled-cost contract above
 supersedes that rule. A separate journal is needed because Pi's aggregate ledger has no dates or
 request roles, and summary usage can be lost before Pi commits it. Historic day/
 role attribution and lifetime process-crash history cannot be reconstructed.
@@ -522,7 +522,7 @@ An already-entered synchronous fake dispatch may complete before cancellation.
 `src/extensions/calendar.ts` defines CalendarAdapter. FixtureCalendar is the default
 and filters events by overlap in a validated ISO interval. All events carry source.
 GoogleCalendar is an intentional stub that throws “OAuth is not configured”. Real
-OAuth consent, credential storage, scopes, and API integration remain M2 work.
+OAuth consent, credential storage, scopes, and API integration remain future work.
 
 ## Explicit deviations and gaps from the original design
 
@@ -533,16 +533,16 @@ OAuth consent, credential storage, scopes, and API integration remain M2 work.
 - FTS5 is an in-memory rebuildable index; Pi SQLite persists the facts themselves.
 - CLI/service communication uses a local Unix socket and OS owner access; optional web uses a local token.
   Hosts without systemd use the supervisor script; see Deployment.
-- Calendar OAuth remains a documented stub, as authorized for M1. Sends are local fixtures.
+- Calendar OAuth remains a documented stub, as planned. Sends are local fixtures.
 - Budgets reserve conservative estimates rather than enforcing invoice-level USD totals;
   unresolved request charges are not assumed free. Compaction uses the same guards;
   a single large input or a blocked summary can still hit a cap/context limit.
   Full retained history remains in Pi storage.
 - No goals profile, channels beyond CLI/local web,
-  backup/restore workflow, real sender, or payload attachments are implemented in M1.
+  backup/restore workflow, real sender, or payload attachments are implemented yet.
 - Pi and node:sqlite are experimental. This is one local process, not a distributed service.
 
-Slice 1 deviations: foreground tool-result delivery was chosen over example 23's
+Subagent deviations: foreground tool-result delivery was chosen over example 23's
 background reporters. `vitest.config.ts` now includes only `tests/**/*.test.ts`:
 the downloaded community reference uses Node's test runner and is not our suite.
 The faux router ignores trailing system messages when finding the current input,
@@ -572,7 +572,7 @@ Limits: the fallback does not start on host reboot; something must run
 `bash deploy/supervise.sh start` again. The key comes from the starting environment or
 from `.env` (dotenv, read from the repo directory); no key is written by the scripts.
 
-## Web research (slice 6)
+## Web research
 
 `src/extensions/web-research.ts` registers `web_fetch({url})` through Pi 1.4.0
 `defineTool`, with `replay: "safe"`. App installs it alongside the personal tools;

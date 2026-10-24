@@ -245,9 +245,9 @@ Tests use a fake model provider and a fake outbox; they make no paid calls.
 
 | Document | Contents |
 |---|---|
-| [docs/VISION.md](docs/VISION.md) | Purpose and success criteria |
+| [docs/VISION.md](docs/VISION.md) | Purpose and why Pi Durable |
 | [docs/tech_spec.md](docs/tech_spec.md) | As-built architecture, contracts, and limitations |
-| [docs/PROGRESS.md](docs/PROGRESS.md) | Roadmap and change log |
+| [docs/PROGRESS.md](docs/PROGRESS.md) | Step-by-step change log |
 | [AGENTS.md](AGENTS.md) | Instructions for AI coding agents working on this repo |
 
 ## Common problems

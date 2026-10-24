@@ -19,6 +19,6 @@ export class FixtureCalendar implements CalendarAdapter {
 }
 export class GoogleCalendar implements CalendarAdapter {
   async listEvents(_start: string, _end: string): Promise<CalendarEvent[]> {
-    throw new Error('Google Calendar OAuth is not configured; use the fixture adapter for M1');
+    throw new Error('Google Calendar OAuth is not configured; use the fixture adapter');
   }
 }
