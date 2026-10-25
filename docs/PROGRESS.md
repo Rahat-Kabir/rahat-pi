@@ -12,6 +12,11 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
 
+### Phone layout fixes from the visual check (2026-10-25)
+At phone width the approvals panel shrank to a ~45px sliver (its grid row could collapse to zero), and each new chat message scrolled the whole page past it.
+The panel now keeps its height up to 60vh, and the chat scrolls only its own list. This closes the pending visual checks for the phone banner and readable tool lines.
+Verified: headless Chrome screenshots of an offline preview at 390px and 1280px (cards readable, page stays at top after a new message, no sideways scroll, desktop unchanged); app tests and build.
+
 ### Daily backups (2026-10-24)
 The running service saves `data/backups/<time>/` once a day (both databases via `VACUUM INTO` with an integrity check, plus workspace and web token) and keeps 14; `npm run cli -- backup` saves one now.
 Backups stay on the same disk (owner's choice); README has a restore guide.

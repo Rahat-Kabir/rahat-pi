@@ -80,7 +80,7 @@ export function App() {
             {view === 'chat' ? <ChatView state={state} /> : <MemoriesView memories={state.memories} />}
           </div>
           {/* On a phone, approvals waiting for the owner go above the chat; a long history scrolls inside. */}
-          <div ref={approvals} className={`flex max-h-[60vh] min-h-0 scroll-mt-4 flex-col lg:max-h-none [&>section]:flex-1 ${waiting > 0 ? 'order-first lg:order-none' : ''}`}>
+          <div ref={approvals} className={`flex max-h-[60vh] scroll-mt-4 flex-col lg:max-h-none lg:min-h-0 [&>section]:flex-1 ${waiting > 0 ? 'order-first lg:order-none' : ''}`}>
             <ApprovalsPanel actions={state.actions} />
           </div>
         </main>

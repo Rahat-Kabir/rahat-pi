@@ -12,10 +12,15 @@ export function ChatView({ state }: { state: WebState }) {
   const failure = runFailure(state);
   const agentBusy = Boolean(state.live.run);
   const runningTools = (state.live.tools ?? []).filter(tool => tool.status !== 'done');
-  const bottom = useRef<HTMLDivElement>(null);
+  const messageList = useRef<HTMLDivElement>(null);
 
+  // Scroll only the list: scrollIntoView would also scroll the page on a phone,
+  // pushing waiting approvals above the chat out of view.
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: 'end' });
+    const list = messageList.current;
+    if (list) {
+      list.scrollTop = list.scrollHeight;
+    }
   }, [messages.length, answer?.text, state.inbox.items.length]);
 
   return (
@@ -23,7 +28,7 @@ export function ChatView({ state }: { state: WebState }) {
       title="Chat"
       actions={<span className="text-xs text-slate-500 dark:text-slate-400">{agentBusy ? 'Working…' : 'Idle'}</span>}
     >
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+      <div ref={messageList} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         {messages.length === 0 && !answer && (
           <p className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">No messages yet. Say hello.</p>
         )}
@@ -43,7 +48,6 @@ export function ChatView({ state }: { state: WebState }) {
           </div>
         ))}
         {failure && <p role="alert" className="rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{failure}</p>}
-        <div ref={bottom} />
       </div>
       <Composer agentBusy={agentBusy} />
     </Panel>
