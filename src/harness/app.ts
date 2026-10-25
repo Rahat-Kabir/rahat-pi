@@ -15,6 +15,9 @@ import { buildModels, capModelOutput, budgetCompactionModels } from './models.js
 import { type Config, crashAt } from '../config.js';
 import { MemoryIndex } from '../extensions/memory.js';
 import { readStoppedTasks } from './health.js';
+import { backupIntervalMs, createBackup, newestBackupTime } from './backup.js';
+
+const backupCheckIntervalMs = 60 * 60 * 1000;
 import { FixtureCalendar } from '../extensions/calendar.js';
 import { buildTools } from '../extensions/tools.js';
 import { buildWebFetchTool, WebResearch } from '../extensions/web-research.js';
@@ -29,7 +32,7 @@ import { approveAction, editAction } from '../executor/actions.js';
 
 export type Command =
   | { name: 'chat'; message: string; requestId?: string }
-  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' | 'health' }
+  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' | 'health' | 'backup' }
   | { name: 'retry'; taskId: number }
   | { name: 'forget'; id: string }
   | { name: 'approve' | 'reject'; id: string; payloadHash?: string }
@@ -56,6 +59,7 @@ export class App {
   private watchdogWork: Promise<void> | undefined;
   private queue: Promise<unknown> = Promise.resolve();
   private finishedTaskIds = new Set<number>();
+  private lastBackupCheck = Number.NEGATIVE_INFINITY;
   private constructor(
     readonly config: Config,
     readonly harness: Harness,
@@ -259,6 +263,8 @@ export class App {
         return this.forgetMemory(command.id);
       case 'health':
         return { stoppedTasks: await this.stoppedTasks() };
+      case 'backup':
+        return createBackup(this.config.dataDir);
       case 'retry':
         return this.retryStoppedTask(command.taskId);
       case 'state':
@@ -286,6 +292,22 @@ export class App {
       subagents[subagent.status] = (subagents[subagent.status] ?? 0) + 1;
     }
     return { ...stats, subagents };
+  }
+  // Called by the service loop; checks hourly so a failure is retried without flooding the log.
+  backupIfDue(now = Date.now()) {
+    if (now - this.lastBackupCheck < backupCheckIntervalMs) {
+      return;
+    }
+    this.lastBackupCheck = now;
+    const newestBackup = newestBackupTime(this.config.dataDir);
+    if (newestBackup !== undefined && now - newestBackup < backupIntervalMs) {
+      return;
+    }
+    try {
+      console.log(`Backup saved: ${createBackup(this.config.dataDir, now).backup}`);
+    } catch (error) {
+      console.error(`Backup failed; trying again in an hour: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
   async stoppedTasks() {
     const view = await this.root.viewState(context);

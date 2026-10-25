@@ -567,6 +567,24 @@ retries one, and the app shows a red banner with a Retry button on every screen 
 A SIGKILL test crashes `memory_write` five times, sees it listed, retries it, and finds
 the memory stored once.
 
+## Backups
+
+`src/harness/backup.ts` writes `<dataDir>/backups/<ISO time>/` (folder 0700): `pi.sqlite`
+and `fake-provider.sqlite` through `VACUUM INTO` from a read-only connection, which
+copies one consistent snapshot including WAL commits while the service runs, each
+checked with `PRAGMA integrity_check`; then `workspace/` and `web-token` as files. It
+writes into `<name>.partial` and renames when complete; a later backup deletes any
+leftover partial (one process owns the data folder). The newest 14 are kept.
+
+The service loop calls `App.backupIfDue()`: at most once an hour it checks the newest
+backup's time and saves one when there is none or it is 24 hours old, so backups follow
+restarts and sleep without a fixed clock time. A failure is logged and retried at the
+next hourly check. `npm run cli -- backup` (owner command `backup`) saves one now.
+Backups use the wall clock, not `RAHAT_PI_NOW`. Restore is manual (README): stop the
+service and copy a backup's contents into an empty data folder; tests restore a backup
+into a fresh folder and find the memory and workspace file. Backups do not leave the
+agent's disk; copying them elsewhere is the owner's job.
+
 ## Limits and stop
 
 `src/policy/` owns the tool allowlist and checks tool-call counts in Pi ToolTask's
@@ -618,8 +636,8 @@ OAuth consent, credential storage, scopes, and API integration remain future wor
   unresolved request charges are not assumed free. Compaction uses the same guards;
   a single large input or a blocked summary can still hit a cap/context limit.
   Full retained history remains in Pi storage.
-- No goals profile, channels beyond CLI/local web,
-  backup/restore workflow, real sender, or payload attachments are implemented yet.
+- No goals profile, channels beyond CLI/local web, real sender, or payload
+  attachments are implemented yet. Backups stay on the agent's disk.
 - Pi and node:sqlite are experimental. This is one local process, not a distributed service.
 
 Subagent deviations: foreground tool-result delivery was chosen over example 23's

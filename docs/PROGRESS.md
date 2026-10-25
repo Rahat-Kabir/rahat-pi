@@ -12,6 +12,11 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
 
+### Daily backups (2026-10-24)
+The running service saves `data/backups/<time>/` once a day (both databases via `VACUUM INTO` with an integrity check, plus workspace and web token) and keeps 14; `npm run cli -- backup` saves one now.
+Backups stay on the same disk (owner's choice); README has a restore guide.
+Verified: backup during a live app restored into a fresh folder keeps memory and files; pruning, leftover partial cleanup, hourly/daily timing, CLI; full offline suite.
+
 ### Stopped tasks you can see and retry (2026-10-24)
 Pi 1.4 parks a task after 5 crashes in a row, which silently stops a routine or leaves chat stuck; before, only `stats` counted them.
 New `health` and `retry <taskId>` commands, `stoppedTasks` in the live state, `POST /api/tasks/retry`, and a red app banner with Retry.

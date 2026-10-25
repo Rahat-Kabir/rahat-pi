@@ -72,6 +72,9 @@ for (const commandName of ['approve', 'reject'] as const) {
     console.log(JSON.stringify(await invoke({ name: commandName, id: actionId }), null, 2));
   });
 }
+program.command('backup').description('Save a backup of the data folder now').action(async () => {
+  console.log(JSON.stringify(await invoke({ name: 'backup' }), null, 2));
+});
 program.command('health').description('List tasks that stopped running').action(async () => {
   console.log(JSON.stringify(await invoke({ name: 'health' }), null, 2));
 });

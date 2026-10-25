@@ -149,6 +149,7 @@ npm run cli -- outbox           # the fake outbox shows one sent message
 | `npm run cli -- compact` | Summarize older chat history now |
 | `npm run cli -- stats [--json]` | Spend and health statistics |
 | `npm run cli -- health` / `retry <taskId>` | Tasks that stopped after repeated crashes; run one again |
+| `npm run cli -- backup` | Save a backup now (the service also saves one daily) |
 | `npm run cli -- stop` | Kill switch: stops the service and cancels running work |
 | `npm run demo` | Free offline walkthrough of memory, approvals, and send-once |
 | `npm run eval` | 15 free offline scenario checks with a JSON report |
@@ -225,6 +226,28 @@ bash deploy/supervise.sh stop     # or: npm run cli -- stop
 ```
 
 A clean `stop` is never restarted, so the kill switch keeps working.
+
+### Backups
+
+The running service saves a backup once a day in `data/backups/<time>/` and keeps the
+newest 14. Run `npm run cli -- backup` for one now (for example before an update).
+Each backup holds both databases (checked for corruption), the agent's workspace, and
+the web token. Backups sit on the same disk as the agent: copy `data/backups/` elsewhere
+if you need to survive a disk failure.
+
+To restore, stop the agent, put the current data aside, and copy a backup in:
+
+```bash
+npm run cli -- stop
+mv data data-before-restore
+mkdir -m 700 data
+cp -r data-before-restore/backups/2026-10-24T03-00-00-000Z/. data/
+npm run cli -- web
+```
+
+Everything after that backup (messages, memories, approvals) is lost. An action that
+was proposed before the backup and approved after it shows as waiting again: check
+that it was not already sent before approving it a second time.
 
 ## Development
 
