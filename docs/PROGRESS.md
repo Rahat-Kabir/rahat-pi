@@ -8,9 +8,14 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [x] App shell (React + Vite + Tailwind), installable; chat and approvals
 - [ ] Notifications when an approval is needed or a routine finishes
 - [x] Memories: owner CLI commands, then endpoint and screen
-- [ ] Routines: owner CLI commands first, then endpoints and screens
+- [x] Routines: owner CLI commands first, then endpoints and screens
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
+
+### Routines you control (2026-10-26)
+Owner commands `routines` and `routine pause|resume|delete <id>`, `routines` in the live state, `POST /api/routines`, and a Routines tab with Pause/Resume and a confirmed Delete.
+Resume is new: it skips runs missed while paused and starts a fresh task in the same commit, so the watchdog cannot stop it. Creating routines still happens through chat.
+Verified: CLI test (list order, pause, resume skips the missed run then runs next day, delete keeps history, unknown ids refused), SIGKILL right after resume runs once, web tests (401/400/409, live updates), app tests and build, headless Chrome clicks at phone and desktop width.
 
 ### Phone layout fixes from the visual check (2026-10-25)
 At phone width the approvals panel shrank to a ~45px sliver (its grid row could collapse to zero), and each new chat message scrolled the whole page past it.

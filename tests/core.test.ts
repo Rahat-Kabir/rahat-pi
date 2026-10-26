@@ -144,6 +144,60 @@ describe('offline Pi integration', () => {
       temporaryStorage.cleanup();
     }
   });
+  it('lets the owner list, pause, resume, and delete routines from the CLI', async () => {
+    const temporaryStorage = temporaryData();
+    const beforeMorning = { RAHAT_PI_NOW: '2026-10-24T07:00:00+06:00' };
+    const afterMorning = { RAHAT_PI_NOW: '2026-10-24T09:00:00+06:00' };
+    const nextMorning = { RAHAT_PI_NOW: '2026-10-25T08:00:00+06:00' };
+    // Setup and scheduler ticks run in-process; only the owner commands under test spawn the CLI.
+    const atTime = async <Result>(clock: Record<string, string>, work: (app: App) => Promise<Result>) => {
+      const app = await App.open(offlineConfig(temporaryStorage.dataDir, clock));
+      try {
+        return await work(app);
+      } finally {
+        await app.close();
+      }
+    };
+    try {
+      await atTime(beforeMorning, async app => {
+        for (const [name, time] of [['Evening', '20:00'], ['Morning', '08:00']]) {
+          await app.dispatch({ name: 'chat', message: toolMessage('routine_create', {
+            name, prompt: `${name} briefing`, time, missedRunPolicy: 'catchUpOnce',
+          }) });
+        }
+      });
+      const listed = jsonOutput(await cli(temporaryStorage.dataDir, ['routines'], beforeMorning)) as (Routine & { lastRun: unknown })[];
+      expect(listed.map(routine => routine.name)).toEqual(['Morning', 'Evening']);
+      expect(listed[0]).toMatchObject({ enabled: true, nextRunAt: Date.parse('2026-10-24T08:00:00+06:00'), lastRun: null });
+      const [morning, evening] = listed;
+
+      expect(jsonOutput(await cli(temporaryStorage.dataDir, ['routine', 'pause', morning.id], beforeMorning))).toEqual({ id: morning.id, status: 'paused' });
+      // Paused through 08:00: resuming at 09:00 skips that run even with catchUpOnce.
+      expect(jsonOutput(await cli(temporaryStorage.dataDir, ['routine', 'resume', morning.id], afterMorning))).toEqual({ id: morning.id, status: 'active' });
+      const resumed = await atTime(afterMorning, async app => {
+        await app.dispatch({ name: 'tick' });
+        return (await app.listRoutines())[0];
+      });
+      expect(resumed).toMatchObject({ enabled: true, nextRunAt: Date.parse(nextMorning.RAHAT_PI_NOW), lastRun: null });
+
+      expect(jsonOutput(await cli(temporaryStorage.dataDir, ['routine', 'delete', evening.id], nextMorning))).toEqual({ id: evening.id, status: 'deleted' });
+      await atTime(nextMorning, async app => {
+        // The resumed routine really runs at its next time.
+        await app.dispatch({ name: 'tick' });
+        const remaining = await app.listRoutines();
+        expect(remaining.map(routine => routine.name)).toEqual(['Morning']);
+        expect(remaining[0].lastRun).toMatchObject({ occurrenceTime: Date.parse(nextMorning.RAHAT_PI_NOW), status: 'succeeded' });
+        const state = await app.dispatch({ name: 'state' }) as { routines: Record<string, Routine> };
+        expect(state.routines[evening.id]).toMatchObject({ enabled: false, deleted: true });
+        for (const name of ['pauseRoutine', 'resumeRoutine', 'deleteRoutine'] as const) {
+          await expect(app.dispatch({ name, id: evening.id })).rejects.toThrow('Routine not found');
+        }
+      });
+      await expect(cli(temporaryStorage.dataDir, ['routine', 'pause', 'missing'], nextMorning)).rejects.toThrow('Routine not found');
+    } finally {
+      temporaryStorage.cleanup();
+    }
+  });
   it('rejects token and daily reservation overages before a model request', async () => {
     for (const configOverrides of [{ RAHAT_PI_MAX_RUN_TOKENS: '1' }, { RAHAT_PI_DAILY_USD_CAP: '0.000000001' }] as Record<string, string>[]) {
       const temporaryStorage = temporaryData();

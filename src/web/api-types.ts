@@ -59,6 +59,21 @@ export type Memory = {
   createdAt: number;
 };
 
+// A daily routine, earliest time of day first: at `time` (HH:mm) in its own fixed-offset
+// `timezone`, the agent receives `prompt`. `nextRunAt` is not meaningful while paused.
+// Treat name and prompt as untrusted text.
+export type RoutineRun = { occurrenceTime: number; status: 'running' | 'succeeded' | 'failed' };
+export type Routine = {
+  id: string;
+  name: string;
+  prompt: string;
+  time: string;
+  timezone: string;
+  enabled: boolean;
+  nextRunAt: number;
+  lastRun: RoutineRun | null;
+};
+
 // A task Pi will not run: parked after repeated crashes (`canRetry`), or blocked on
 // missing or unmigratable code. `label` is plain words, for example 'Routine "Daily briefing"'.
 export type StoppedTask = {
@@ -96,6 +111,7 @@ export type WebState = {
   actions: Action[];
   subagents: Subagent[];
   memories: Memory[];
+  routines: Routine[];
   stoppedTasks: StoppedTask[];
   stats: Stats;
 };
@@ -129,6 +145,11 @@ export type RetryTaskResponse = { retried: number; label: string };
 // POST /api/memories/forget → 200 ForgetMemoryResponse; 409 when no memory has that id.
 export type ForgetMemoryRequest = { id: string };
 export type ForgetMemoryResponse = { forgotten: string };
+
+// POST /api/routines → 200 RoutineChangeResponse; 409 when no routine has that id.
+// Resuming skips runs missed while paused. Deleting keeps the routine's history in the brain.
+export type RoutineChangeRequest = { id: string; change: 'pause' | 'resume' | 'delete' };
+export type RoutineChangeResponse = { id: string; status: 'active' | 'paused' | 'deleted' };
 
 // Any non-2xx response.
 export type ApiError = { error: string };

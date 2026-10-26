@@ -84,6 +84,7 @@ function readCookie(incomingRequest: IncomingMessage, name: string) {
   return undefined;
 }
 
+const routineChangeCommands = { pause: 'pauseRoutine', resume: 'resumeRoutine', delete: 'deleteRoutine' } as const;
 const sessionCookieName = 'rahat_session';
 // 400 days is the longest cookie lifetime browsers accept.
 const sessionMaxAgeSeconds = 400 * 24 * 60 * 60;
@@ -242,6 +243,15 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
     if (path === '/api/memories/forget') {
       const id = requireString(body, 'id', 200);
       sendJson(response, 200, await app.dispatch({ name: 'forget', id }));
+      return;
+    }
+    if (path === '/api/routines') {
+      const id = requireString(body, 'id', 200);
+      const change = body.change;
+      if (change !== 'pause' && change !== 'resume' && change !== 'delete') {
+        throw new HttpError(400, 'Invalid change');
+      }
+      sendJson(response, 200, await app.dispatch({ name: routineChangeCommands[change], id }));
       return;
     }
     throw new HttpError(404, 'Not found');

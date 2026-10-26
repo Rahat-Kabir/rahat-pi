@@ -146,6 +146,8 @@ npm run cli -- outbox           # the fake outbox shows one sent message
 | `npm run cli -- reconcile` | Look up receipts for `unknown` sends; never resends |
 | `npm run cli -- subagents` | Helper agents, their status and answers |
 | `npm run cli -- memories` / `forget <id>` | List what the agent remembers; forget one fact |
+| `npm run cli -- routines` | Routines with their schedule, next run, and latest run |
+| `npm run cli -- routine pause\|resume\|delete <id>` | Change a routine; resume skips runs missed while paused |
 | `npm run cli -- compact` | Summarize older chat history now |
 | `npm run cli -- stats [--json]` | Spend and health statistics |
 | `npm run cli -- health` / `retry <taskId>` | Tasks that stopped after repeated crashes; run one again |

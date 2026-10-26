@@ -308,6 +308,39 @@ describe('local web UI', () => {
     }
   });
 
+  it('shows routines in the live state and pauses, resumes, and deletes one only when signed in', async () => {
+    const fixture = await webFixture();
+    try {
+      await fixture.app.dispatch({ name: 'chat', message: toolMessage('routine_create', {
+        name: '<b>Morning</b>', prompt: 'Brief me', time: '08:00', missedRunPolicy: 'skip',
+      }) });
+      const [routine] = (await readState(fixture.baseUrl, fixture.token)).routines;
+      expect(routine).toMatchObject({ name: '<b>Morning</b>', prompt: 'Brief me', time: '08:00', enabled: true, lastRun: null });
+
+      expect((await post(fixture.baseUrl, '', '/api/routines', { id: routine.id, change: 'pause' })).status).toBe(401);
+      expect((await post(fixture.baseUrl, fixture.token, '/api/routines', { id: routine.id, change: 'run' })).status).toBe(400);
+      expect((await post(fixture.baseUrl, fixture.token, '/api/routines', { change: 'pause' })).status).toBe(400);
+      expect((await post(fixture.baseUrl, fixture.token, '/api/routines', { id: 'missing', change: 'pause' })).status).toBe(409);
+      const events = await openEvents(fixture.baseUrl, fixture.token);
+      try {
+        const pauseResponse = await post(fixture.baseUrl, fixture.token, '/api/routines', { id: routine.id, change: 'pause' });
+        expect(await pauseResponse.json()).toEqual({ id: routine.id, status: 'paused' });
+        await events.nextState(state => state.routines[0]?.enabled === false);
+        const resumeResponse = await post(fixture.baseUrl, fixture.token, '/api/routines', { id: routine.id, change: 'resume' });
+        expect(await resumeResponse.json()).toEqual({ id: routine.id, status: 'active' });
+        await events.nextState(state => state.routines[0]?.enabled === true);
+        const deleteResponse = await post(fixture.baseUrl, fixture.token, '/api/routines', { id: routine.id, change: 'delete' });
+        expect(await deleteResponse.json()).toEqual({ id: routine.id, status: 'deleted' });
+        await events.nextState(state => state.routines.length === 0);
+      } finally {
+        events.close();
+      }
+      expect((await post(fixture.baseUrl, fixture.token, '/api/routines', { id: routine.id, change: 'resume' })).status).toBe(409);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('shows stopped tasks in the live state and retries one only when signed in', async () => {
     const fixture = await webFixture();
     try {

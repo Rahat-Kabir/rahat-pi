@@ -20,6 +20,7 @@ export async function readWebState(app: App, conversationView: ConversationView)
     actions: Object.values(state?.actions ?? {}),
     subagents: await app.listSubagents(),
     memories: await app.listMemories(),
+    routines: await app.listRoutines(),
     stoppedTasks: await readStoppedTasks(app.harness, app.root.id, (conversationView.docs['pi.live'] as LiveState | undefined)?.tools ?? []),
     stats: await app.stats(),
   };

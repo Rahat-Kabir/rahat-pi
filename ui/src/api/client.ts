@@ -1,6 +1,6 @@
 import type {
   ActionDecisionRequest, ApiError, ForgetMemoryRequest, ForgetMemoryResponse, MessageRequest, MessageResponse,
-  RetryTaskRequest, RetryTaskResponse, SessionResponse, SignInRequest,
+  RetryTaskRequest, RetryTaskResponse, RoutineChangeRequest, RoutineChangeResponse, SessionResponse, SignInRequest,
 } from '@api';
 
 // Every write to the brain goes through here. The brain makes all safety decisions;
@@ -58,6 +58,10 @@ export function retryTask(request: RetryTaskRequest) {
 
 export function forgetMemory(request: ForgetMemoryRequest) {
   return post<ForgetMemoryResponse>('/api/memories/forget', request);
+}
+
+export function changeRoutine(request: RoutineChangeRequest) {
+  return post<RoutineChangeResponse>('/api/routines', request);
 }
 
 // Turns API failures into a sentence the owner can act on.

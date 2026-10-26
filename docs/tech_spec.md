@@ -72,6 +72,13 @@ Stop aborts all background tasks; service start/tick rearms enabled terminal tim
 An explicitly aborted in-flight briefing is marked failed and is not rerun for
 that occurrence. Changing the prompt requires creating a new routine.
 
+Owner commands (not agent tools): `routines` lists live routines by time of day, each
+with its latest run; `routine pause|resume|delete <id>` changes one, and an unknown or
+deleted id is an error. Resume first stops the paused task if the watchdog has not
+yet, then in one commit sets `enabled`, moves `nextRunAt` to the next future time
+(runs missed while paused are skipped, whatever `missedRunPolicy` says), and creates
+a fresh task. The agent still has no resume tool.
+
 `RAHAT_PI_NOW` fixes the application/Pi clock for restart tests. Sleep deadlines and
 occurrence IDs use that clock; real wall deadlines are also enforced. All processes
 opening the same data must use the same clock. There is no fake-time option in the
@@ -318,6 +325,11 @@ agent's `memory_forget`, which always reports success. Forgetting deletes the st
 fact and its search entry; earlier chat history or a compaction summary that
 mentions the fact is not rewritten.
 
+Routines are part of the live state too (`routines`, the owner `routines` list).
+`POST /api/routines` accepts `{id, change}` with change `pause`, `resume`, or
+`delete`, runs the matching owner command, and answers `{id, status}`; an unknown or
+deleted id is 409.
+
 EventSource retries every second and acquires the current durable snapshot; no
 SSE event history/cursor needs persistence. The web command resumes Pi tasks on
 start. `scripts/web-snapshot.ts` (`npm run web:snapshot`) fetches `/api/state` from
@@ -367,11 +379,13 @@ itself. Signed in, the browser sends the cookie on every request. Live updates u
 existing SSE stream; a refused stream (for example after the token file was replaced)
 makes the app check its sign-in again. Remote access (for example Tailscale with HTTPS)
 is not set up yet; adding it also needs `Secure` cookies and its Host name allowed. The manifest and PNG/SVG icons make it installable in Chromium browsers; there
-is no service worker or offline mode. A Chat | Memories switch sits above the main
-column. The memories view lists `state.memories` (newest first, with source and save
-time) and forgets one after an inline "Forget this for good?" confirmation. Done so
-far: chat, approvals, memories. Still open: notifications, routines (needs owner
-commands), activity, removing the old page.
+is no service worker or offline mode. A Chat | Memories | Routines switch sits above
+the main column. The memories view lists `state.memories` (newest first, with source
+and save time) and forgets one after an inline "Forget this for good?" confirmation.
+The routines view shows each routine's schedule, prompt, next and latest run (in the
+routine's own timezone), with Pause/Resume and Delete after a "Delete this routine?"
+confirmation. Done so far: chat, approvals, memories, routines. Still open:
+notifications, activity, removing the old page.
 
 ## Sandboxed workspace tools
 
@@ -627,7 +641,7 @@ OAuth consent, credential storage, scopes, and API integration remain future wor
 - A single session document with keyed records replaces separate Pi document families;
   there are no separate Space/Connector records. The only space is implicitly personal.
 - A daily HH:mm schedule replaces generic cron; only fixed-offset timezones (no DST) are supported.
-  Deleted routines retain tombstones/audit history. Paused routines have no resume tool.
+  Deleted routines retain tombstones/audit history. Only the owner can resume a paused routine.
 - FTS5 is an in-memory rebuildable index; Pi SQLite persists the facts themselves.
 - CLI/service communication uses a local Unix socket and OS owner access; optional web uses a local token.
   Hosts without systemd use the supervisor script; see Deployment.

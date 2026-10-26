@@ -10,7 +10,7 @@ import { openPiStorage } from './storage.js';
 import { omitUnansweredTurns } from './conversation-context.js';
 import { initializeCosts } from './costs.js';
 import { readStats } from './stats.js';
-import { AppDoc } from './state.js';
+import { AppDoc, type RoutineRun } from './state.js';
 import { buildModels, capModelOutput, budgetCompactionModels } from './models.js';
 import { type Config, crashAt } from '../config.js';
 import { MemoryIndex } from '../extensions/memory.js';
@@ -24,7 +24,8 @@ import { buildWebFetchTool, WebResearch } from '../extensions/web-research.js';
 import { buildWorkspaceTools, Workspace } from '../extensions/workspace.js';
 import { buildSubagentTool, SubagentsDoc, childDeadlineReached } from '../extensions/subagents.js';
 import { childToolNames } from '../policy/index.js';
-import { BriefingTask } from '../extensions/routines.js';
+import { BriefingTask, nextDailyOccurrence } from '../extensions/routines.js';
+import { fixedUtcOffsetMs } from '../timezone.js';
 import { limitHooks, reserveModelRequest, runDeadlineReached } from '../policy/limits.js';
 import { FakeSender } from '../executor/fake-sender.js';
 import { Executor } from '../executor/index.js';
@@ -32,9 +33,10 @@ import { approveAction, editAction } from '../executor/actions.js';
 
 export type Command =
   | { name: 'chat'; message: string; requestId?: string }
-  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' | 'health' | 'backup' }
+  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' | 'health' | 'backup' | 'routines' }
   | { name: 'retry'; taskId: number }
   | { name: 'forget'; id: string }
+  | { name: 'pauseRoutine' | 'resumeRoutine' | 'deleteRoutine'; id: string }
   | { name: 'approve' | 'reject'; id: string; payloadHash?: string }
   | { name: 'edit'; id: string; recipient: string; body: string };
 export type Output = (event: { type: 'text' | 'tool'; text: string }) => void;
@@ -261,6 +263,14 @@ export class App {
         return this.listMemories();
       case 'forget':
         return this.forgetMemory(command.id);
+      case 'routines':
+        return this.listRoutines();
+      case 'pauseRoutine':
+        return this.disableRoutine(command.id, 'paused');
+      case 'deleteRoutine':
+        return this.disableRoutine(command.id, 'deleted');
+      case 'resumeRoutine':
+        return this.resumeRoutine(command.id);
       case 'health':
         return { stoppedTasks: await this.stoppedTasks() };
       case 'backup':
@@ -345,6 +355,64 @@ export class App {
       delete memories[id];
       return { forgotten: id };
     }, context);
+  }
+  // Earliest time of day first, each with its latest run, so the owner sees what runs when.
+  async listRoutines() {
+    const state = await this.harness.snapshot(AppDoc, context);
+    const routineRuns = Object.values(state?.routineRuns ?? {});
+    return Object.values(state?.routines ?? {})
+      .filter(routine => !routine.deleted)
+      .sort((first, second) => first.time.localeCompare(second.time) || first.name.localeCompare(second.name))
+      .map(routine => {
+        const lastRun = routineRuns
+          .filter(routineRun => routineRun.routineId === routine.id)
+          .reduce<RoutineRun | null>((latest, routineRun) =>
+            latest && latest.occurrenceTime > routineRun.occurrenceTime ? latest : routineRun, null);
+        return { ...routine, lastRun };
+      });
+  }
+  // The watchdog then stops the routine's sleeping task. Deleting keeps the record and its runs for audit.
+  private async disableRoutine(id: string, status: 'paused' | 'deleted') {
+    return this.harness.commit(async transaction => {
+      const routine = (await transaction.doc(AppDoc)).routines[id];
+      if (!routine || routine.deleted) {
+        throw new Error('Routine not found');
+      }
+      routine.enabled = false;
+      routine.deleted = status === 'deleted';
+      return { id, status };
+    }, context);
+  }
+  // Runs missed while paused are skipped: the routine next runs at its first time after now.
+  private async resumeRoutine(id: string) {
+    const routine = (await this.harness.snapshot(AppDoc, context))?.routines[id];
+    if (!routine || routine.deleted) {
+      throw new Error('Routine not found');
+    }
+    if (routine.enabled) {
+      return { id, status: 'active' as const };
+    }
+    // The watchdog may not have stopped the paused task yet. Stop it here so it cannot
+    // stop the new task after the routine is enabled again.
+    if (await this.taskStillRunning(routine.taskId)) {
+      await this.harness.abortTask(routine.taskId as TaskId, context);
+    }
+    const result = await this.harness.commit(async transaction => {
+      const pausedRoutine = (await transaction.doc(AppDoc)).routines[id];
+      if (!pausedRoutine || pausedRoutine.deleted) {
+        throw new Error('Routine not found');
+      }
+      pausedRoutine.enabled = true;
+      pausedRoutine.nextRunAt = nextDailyOccurrence(pausedRoutine.time, this.config.now(), fixedUtcOffsetMs(pausedRoutine.timezone));
+      pausedRoutine.taskId = await transaction.createTask(
+        BriefingTask,
+        { routineId: id },
+        { ownership: { kind: 'conversation' }, conversationId: this.root.id, background: true },
+      );
+      return { id, status: 'active' as const };
+    }, context);
+    crashAt('routine_resumed');
+    return result;
   }
   async listSubagents() {
     const subagents = await this.harness.snapshot(SubagentsDoc, context);

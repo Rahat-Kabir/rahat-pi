@@ -85,6 +85,17 @@ program.command('retry <taskId>').description('Run a task parked after repeated 
   }
   console.log(JSON.stringify(await invoke({ name: 'retry', taskId: parsedTaskId }), null, 2));
 });
+program.command('routines').description('List routines with their next and latest run').action(async () => {
+  console.log(JSON.stringify(await invoke({ name: 'routines' }), null, 2));
+});
+// Grouped under `routine` so a bare `delete <id>` is never mistaken for deleting something else.
+const routineCommand = program.command('routine').description('Pause, resume, or delete a routine');
+const routineChanges = { pause: 'pauseRoutine', resume: 'resumeRoutine', delete: 'deleteRoutine' } as const;
+for (const [change, commandName] of Object.entries(routineChanges)) {
+  routineCommand.command(`${change} <id>`).action(async routineId => {
+    console.log(JSON.stringify(await invoke({ name: commandName, id: routineId }), null, 2));
+  });
+}
 program.command('forget <id>').description('Forget one remembered fact').action(async memoryId => {
   console.log(JSON.stringify(await invoke({ name: 'forget', id: memoryId }), null, 2));
 });

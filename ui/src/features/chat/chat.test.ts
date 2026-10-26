@@ -11,6 +11,7 @@ function stateWith(partial: Partial<WebState>): WebState {
     actions: [],
     subagents: [],
     memories: [],
+    routines: [],
     stoppedTasks: [],
     stats: {} as WebState['stats'],
     ...partial,

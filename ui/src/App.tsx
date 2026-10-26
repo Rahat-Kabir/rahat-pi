@@ -5,14 +5,19 @@ import { Header } from './features/connection/Header';
 import { SignIn } from './features/connection/SignIn';
 import { ChatView } from './features/chat/ChatView';
 import { MemoriesView } from './features/memories/MemoriesView';
+import { RoutinesView } from './features/routines/RoutinesView';
 import { ApprovalsBanner } from './features/approvals/ApprovalsBanner';
 import { StoppedTasksBanner } from './features/health/StoppedTasksBanner';
 import { ApprovalsPanel } from './features/approvals/ApprovalsPanel';
 import { waitingCount } from './features/approvals/approvals';
 
 type SignInStatus = 'checking' | 'signedOut' | 'signedIn';
-type View = 'chat' | 'memories';
-const views: { id: View; label: string }[] = [{ id: 'chat', label: 'Chat' }, { id: 'memories', label: 'Memories' }];
+type View = 'chat' | 'memories' | 'routines';
+const views: { id: View; label: string }[] = [
+  { id: 'chat', label: 'Chat' },
+  { id: 'memories', label: 'Memories' },
+  { id: 'routines', label: 'Routines' },
+];
 const recheckDelayMs = 2000;
 
 export function App() {
@@ -77,7 +82,9 @@ export function App() {
                 </button>
               ))}
             </nav>
-            {view === 'chat' ? <ChatView state={state} /> : <MemoriesView memories={state.memories} />}
+            {view === 'chat' && <ChatView state={state} />}
+            {view === 'memories' && <MemoriesView memories={state.memories} />}
+            {view === 'routines' && <RoutinesView routines={state.routines} />}
           </div>
           {/* On a phone, approvals waiting for the owner go above the chat; a long history scrolls inside. */}
           <div ref={approvals} className={`flex max-h-[60vh] scroll-mt-4 flex-col lg:max-h-none lg:min-h-0 [&>section]:flex-1 ${waiting > 0 ? 'order-first lg:order-none' : ''}`}>

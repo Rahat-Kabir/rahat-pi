@@ -101,7 +101,7 @@ npm test               # vitest, offline (all files)
 npm run test:crash     # SIGKILL restart tests only
 npm run test:linux     # Windows: full Linux suite in WSL on the current files
 npx tsc --noEmit
-npm run cli -- chat    # terminal chat; also: run, web, stop, actions, approve <id>, memories, forget <id>, health, retry <taskId>, backup, stats
+npm run cli -- chat    # terminal chat; also: run, web, stop, actions, approve <id>, memories, forget <id>, routines, routine pause|resume|delete <id>, health, retry <taskId>, backup, stats
 npm run demo           # free offline walkthrough (memory, approvals, send-once)
 npm run eval           # 15 offline evals with a JSON report
 npm run web:snapshot   # save static web UI HTML to data/web-snapshot.html
