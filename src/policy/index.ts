@@ -7,7 +7,7 @@ export const toolPolicy = {
   workspace_write: 'local',
   workspace_shell: 'local',
   web_fetch: 'read',
-  calendar_list_events: 'read', propose_send_message: 'proposal',
+  calendar_list_events: 'read', propose_send_message: 'proposal', action_status: 'read',
 } as const;
 export const childToolNames = ['memory_search', 'calendar_list_events', 'web_fetch'] as const;
 

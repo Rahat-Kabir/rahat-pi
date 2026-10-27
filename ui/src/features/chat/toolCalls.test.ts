@@ -9,6 +9,7 @@ describe('tool call lines', () => {
     expect(describeToolCall('web_fetch', { url: 'https://example.com/a/page?q=1' }).summary).toBe('Read a web page (example.com)');
     expect(describeToolCall('subagent_run', { task: 'Long task text', title: 'Compare prices' }).summary).toBe('Asked a helper: "Compare prices"');
     expect(describeToolCall('workspace_list', {}).summary).toBe('Listed workspace files');
+    expect(describeToolCall('action_status', { id: '94' }).summary).toBe('Checked message status');
   });
 
   it('shortens long or multi-line arguments to one line and keeps the full arguments as details', () => {

@@ -44,6 +44,7 @@ const toolDescriptions: Record<string, ToolDescription> = {
     icon: '✉️', running: 'Drafting a message',
     done: toolArguments => `Drafted a message to ${asText(toolArguments.recipient)} (waits for your approval)`,
   },
+  action_status: { icon: '📋', running: 'Checking message status', done: () => 'Checked message status' },
   calendar_list_events: { icon: '📅', running: 'Checking the calendar', done: () => 'Checked the calendar' },
   routine_create: {
     icon: '⏰', running: 'Creating a routine',

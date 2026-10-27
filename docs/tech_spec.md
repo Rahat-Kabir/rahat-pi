@@ -95,6 +95,10 @@ Lifecycle: proposed → approved → executing → succeeded | failed | unknown.
 Rejected is an additional terminal owner decision. Expiry or changed hashes fail
 before dispatch. The policy allowlist only exposes `propose_send_message` for sends;
 it creates a proposal keyed by Pi task ID. Approval is exclusively an owner command.
+Read-only `action_status` lets the model check one proposal by id, or the 10 newest,
+from stored state: status, receipt, error, and an `expired` flag for a stale
+proposal. It never reconciles or sends; the system prompt tells the model to call it
+instead of guessing a send's outcome from chat. Subagents cannot call it.
 
 `src/executor/index.ts` commits executing before entering the fake sender.
 `src/executor/fake-sender.ts` uses a separate `data/fake-provider.sqlite` outbox with

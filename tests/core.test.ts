@@ -118,6 +118,41 @@ describe('offline Pi integration', () => {
       temporaryStorage.cleanup();
     }
   });
+  it('reports send status and receipt from stored actions, never from chat', async () => {
+    const temporaryStorage = temporaryData();
+    const app = await App.open(offlineConfig(temporaryStorage.dataDir));
+    // The offline model replies with the tool's output parts; the status itself is JSON text inside them.
+    const checkStatus = async (toolArguments: object) => {
+      const { reply } = await app.dispatch({ name: 'chat', message: toolMessage('action_status', toolArguments) }) as { reply: string };
+      const [outputPart] = JSON.parse(reply) as { text: string }[];
+      return outputPart.text.startsWith('{') || outputPart.text.startsWith('[') ? JSON.parse(outputPart.text) : outputPart.text;
+    };
+    try {
+      for (const body of ['Meeting moved to 3pm', 'Never mind']) {
+        await app.dispatch({ name: 'chat', message: toolMessage('propose_send_message', { recipient: 'fixture:alice', body }) });
+      }
+      const [sentAction, rejectedAction] = await app.dispatch({ name: 'actions' }) as { id: string }[];
+      expect(await checkStatus({ id: sentAction.id })).toMatchObject({ status: 'proposed', providerReceipt: null, expired: false });
+
+      await app.dispatch({ name: 'approve', id: sentAction.id });
+      await app.dispatch({ name: 'reject', id: rejectedAction.id });
+      await app.dispatch({ name: 'tick' });
+      const [receipt] = (await app.dispatch({ name: 'outbox' }) as { receipt: string }[]).map(row => row.receipt);
+      expect(await checkStatus({ id: sentAction.id })).toMatchObject({
+        recipient: 'fixture:alice', body: 'Meeting moved to 3pm', status: 'succeeded', providerReceipt: receipt,
+      });
+      expect(await checkStatus({ id: rejectedAction.id })).toMatchObject({ status: 'rejected', providerReceipt: null });
+
+      // Without an id the newest proposal comes first, and nothing new is sent.
+      const listed = await checkStatus({}) as { body: string }[];
+      expect(listed.map(action => action.body)).toEqual(['Never mind', 'Meeting moved to 3pm']);
+      expect(await checkStatus({ id: 'missing' })).toContain('Action not found: missing');
+      expect(await app.dispatch({ name: 'outbox' })).toHaveLength(1);
+    } finally {
+      await app.close();
+      temporaryStorage.cleanup();
+    }
+  });
   it('lets the owner list memories newest first and forget one from the CLI', async () => {
     const temporaryStorage = temporaryData();
     try {

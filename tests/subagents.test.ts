@@ -110,6 +110,7 @@ describe('bounded child conversations', () => {
         routine_pause: { id: 'routine' },
         routine_delete: { id: 'routine' },
         propose_send_message: { recipient: 'outside', body: 'bad' },
+        action_status: {},
         subagent_run: { task: 'grandchild' },
         workspace_list: {},
         workspace_read: { path: 'note.txt' },

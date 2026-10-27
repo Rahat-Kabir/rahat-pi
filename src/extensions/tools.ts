@@ -1,6 +1,6 @@
 import { Type } from '@earendil-works/pi-ai';
 import { defineTool, type ToolExecutionResult } from '@earendil-works/pi-durable';
-import { AppDoc } from '../harness/state.js';
+import { AppDoc, type Action } from '../harness/state.js';
 import { proposeAction } from '../executor/actions.js';
 import { createRoutine } from './routines.js';
 import type { CalendarAdapter } from './calendar.js';
@@ -76,6 +76,38 @@ export function buildTools(memoryIndex: MemoryIndex, calendar: CalendarAdapter, 
         }, context);
         crashAt('action_proposed');
         return toolResult(action);
+      },
+    }),
+    defineTool({
+      name: 'action_status',
+      description: 'Read the current status of send proposals: one by id, or the 10 newest. '
+        + 'Only "succeeded" with a providerReceipt means sent; "unknown" means nobody knows yet. Read-only.',
+      parameters: Type.Object({ id: Type.Optional(Type.String({ minLength: 1 })) }),
+      replay: 'safe',
+      execute: async (toolArguments, toolRuntime, context) => {
+        const actions = (await toolRuntime.snapshot(AppDoc, context))?.actions ?? {};
+        const now = toolRuntime.now();
+        const describeAction = (action: Action) => ({
+          id: action.id,
+          recipient: action.payload.recipient,
+          body: action.payload.body,
+          status: action.status,
+          providerReceipt: action.providerReceipt,
+          error: action.error,
+          approvedAt: action.approvedAt,
+          expiresAt: action.expiresAt,
+          expired: action.status === 'proposed' && now >= action.expiresAt,
+        });
+        if (toolArguments.id !== undefined) {
+          const action = actions[toolArguments.id];
+          if (!action) {
+            throw new Error(`Action not found: ${toolArguments.id}`);
+          }
+          return toolResult(describeAction(action));
+        }
+        // Action ids are Pi task ids, so a larger id is a newer proposal.
+        const newestFirst = Object.values(actions).sort((first, second) => Number(second.id) - Number(first.id));
+        return toolResult(newestFirst.slice(0, 10).map(describeAction));
       },
     }),
     defineTool({

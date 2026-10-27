@@ -12,6 +12,11 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
 
+### The agent checks a send instead of guessing (2026-10-27)
+Asked "did the message go out?", the agent said no for a sent message: it had no way to read an action's status, so it guessed from chat.
+New read-only `action_status` tool (one id, or the 10 newest) returns status, receipt, and error; the prompt says to call it and that only `succeeded` with a receipt means sent. The app shows "📋 Checked message status".
+Verified: offline test (proposed → succeeded with the outbox receipt, rejected, newest first, unknown id, no extra send), child denial, app tests and build, typecheck, full offline suite. Live re-ask not yet run.
+
 ### Routines you control (2026-10-26)
 Owner commands `routines` and `routine pause|resume|delete <id>`, `routines` in the live state, `POST /api/routines`, and a Routines tab with Pause/Resume and a confirmed Delete.
 Resume is new: it skips runs missed while paused and starts a fresh task in the same commit, so the watchdog cannot stop it. Creating routines still happens through chat.
