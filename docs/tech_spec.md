@@ -367,8 +367,13 @@ inside the folder, so encoded traversal and escaping symlinks get 404. Before
 styles, images, fonts, and the manifest; `'unsafe-inline'` styles remain for the old
 page's `<style>` block and React style attributes. Scripts stay `'self'` only.
 
-Safety stays in the brain. The app renders all model, tool, and payload text as React
-text (escaped), never as HTML. Approval cards send the hash of the payload they
+Safety stays in the brain. The app renders tool, payload, thinking, and owner text as
+React text (escaped), never as HTML. Assistant replies render as CommonMark through
+`react-markdown` (`ui/src/features/chat/MarkdownText.tsx`): raw HTML stays text (no
+`rehype-raw`), unsafe link schemes are dropped, links open with `noopener noreferrer`,
+and images show as `[image: alt (url)]` text, never loaded, so an injected image URL
+cannot leak chat text (CSP `img-src 'self'` would also block it). No GFM: tables and
+strikethrough show as plain text. Approval cards send the hash of the payload they
 show; approve appears only for `proposed`, reject (cancel) also for `approved`. The
 composer keeps one request ID per unsent text, so retrying an uncertain send is
 admitted once. Tool calls show as one plain-language line each (`ui/src/features/chat/toolCalls.ts`,

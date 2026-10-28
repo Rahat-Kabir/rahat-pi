@@ -12,6 +12,11 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
 
+### Assistant replies render as Markdown (2026-10-28)
+Replies showed raw `**bold**` and `- ` because the app printed all model text as plain text. Assistant replies now go through `react-markdown` 10.1.0 (new app dependency, owner-approved); owner, tool, and thinking text stay plain.
+Raw HTML stays text, `javascript:` links are dropped, links open without a referrer, and images show as text instead of loading. No GFM, so tables stay plain.
+Verified: 4 new app tests (formatting, raw HTML, links, images), app tests and build, typecheck, API contract test. Visual check in the running app not yet done.
+
 ### The agent checks a send instead of guessing (2026-10-27)
 Asked "did the message go out?", the agent said no for a sent message: it had no way to read an action's status, so it guessed from chat.
 New read-only `action_status` tool (one id, or the 10 newest) returns status, receipt, and error; the prompt says to call it and that only `succeeded` with a receipt means sent. The app shows "📋 Checked message status".

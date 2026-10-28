@@ -1,4 +1,5 @@
 import type { DisplayMessage } from './messages';
+import { MarkdownText } from './MarkdownText';
 
 const styles: Record<DisplayMessage['role'], string> = {
   user: 'ml-auto bg-indigo-600 text-white',
@@ -9,9 +10,12 @@ const styles: Record<DisplayMessage['role'], string> = {
 const foldedStyle = 'mr-auto max-w-[85%] text-xs text-slate-500 dark:text-slate-400';
 const foldedBodyStyle = 'mt-1 whitespace-pre-wrap wrap-anywhere rounded-lg bg-slate-50 p-2 font-mono dark:bg-slate-950';
 
-// Text only: React escapes it, so model output can never become HTML or a button.
+// Your messages, tool output, and thinking stay plain text. Assistant replies render as
+// Markdown without raw HTML, so model output can never become arbitrary HTML or a button.
 export function MessageBubble({ message, live = false }: { message: DisplayMessage; live?: boolean }) {
   const bubbleStyle = `max-w-[85%] whitespace-pre-wrap wrap-anywhere rounded-2xl px-4 py-2 text-sm ${styles[message.role]}`;
+  // Markdown makes its own paragraphs, so pre-wrap would add extra blank lines.
+  const markdownBubbleStyle = `max-w-[85%] wrap-anywhere rounded-2xl px-4 py-2 text-sm ${styles[message.role]}`;
   if (message.role === 'tool') {
     // Tool output is often long JSON: closed by default.
     return (
@@ -29,7 +33,10 @@ export function MessageBubble({ message, live = false }: { message: DisplayMessa
           <div className={foldedBodyStyle}>{message.thinking}</div>
         </details>
       )}
-      {message.text && <div className={`${bubbleStyle} ${live ? 'animate-pulse' : ''}`}>{message.text}</div>}
+      {message.text && message.role === 'assistant' && (
+        <div className={`${markdownBubbleStyle} ${live ? 'animate-pulse' : ''}`}><MarkdownText text={message.text} /></div>
+      )}
+      {message.text && message.role !== 'assistant' && <div className={`${bubbleStyle} ${live ? 'animate-pulse' : ''}`}>{message.text}</div>}
       {message.toolCalls.map((toolCall, index) => (
         <details key={index} className={foldedStyle}>
           <summary className="cursor-pointer">{toolCall.icon} {toolCall.summary}</summary>
