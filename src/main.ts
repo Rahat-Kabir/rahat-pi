@@ -95,6 +95,8 @@ export async function runService(config = configFromEnv(), enableWeb = false) {
     app.harness.resume();
     while (!stopping && !app.stopRequested) {
       await app.executor.tick();
+      await app.checkNotificationTriggersIfDue();
+      await app.notifier.tick();
       app.backupIfDue();
       await new Promise(resolve => setTimeout(resolve, 100));
     }

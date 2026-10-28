@@ -590,12 +590,57 @@ retries one, and the app shows a red banner with a Retry button on every screen 
 A SIGKILL test crashes `memory_write` five times, sees it listed, retries it, and finds
 the memory stored once.
 
+## Notifications
+
+Brain side only so far; the app's service worker and toggle are the next step.
+
+**Records.** `src/harness/notifications.ts` keeps `NotificationsDoc` (session doc):
+records `{id, seq, title, body, createdAt}`, push subscriptions, and `nextSeq`. Text is a
+fixed template written by the brain; the model never writes it or chooses who gets it, so
+a notification is not an external write that needs approval. Text is minimal: no recipient
+or message body. `addNotification(transaction, …)` runs inside the commit that records the
+event, so a notification exists exactly when its event does. Ids come from the event, so
+recording it twice (a replayed tool, a retried check) keeps one record. The newest 100 stay.
+
+| Event | Recorded in |
+| --- | --- |
+| Approval waiting | `propose_send_message` commit |
+| Approval expires within 2 hours | service check every 30 s (`checkNotificationTriggersIfDue`) |
+| Send failed (approval expired before dispatch) | executor claim commit |
+| Send result unknown | executor `reconcile`, only once no receipt is found, so a crash right after a real send raises no false alarm |
+| Routine finished / failed | `BriefingTask` result and abort commits (name only, no reply text) |
+| Task stopped after crashes | service check every 30 s; `notifiedStoppedTaskIds` drops a task once it runs again, because Pi resets the restart count on retry |
+| Test | owner command `notify-test` |
+
+The `tick` owner command runs both checks and delivery at once.
+
+**Delivery.** Pushes carry no content (`src/harness/push.ts`): an empty, VAPID-signed POST
+(RFC 8292, ES256 via `node:crypto`, `TTL` 24 h, `Urgency: high`) wakes the browser's service
+worker, which then asks this server for the text. Push services (Google, Mozilla) never see
+what happened, and no encryption library is needed. The key pair is made once in
+`data/push-keys.json` (0600) and backed up, because subscriptions are bound to it.
+`Notifier.tick()` in the service loop pushes each subscription whose `pushedSeq` is behind
+the newest record. 2xx advances it; 404/410 deletes the subscription; anything else or a
+network error backs off 10 s doubling to 1 h. Delivery is at least once: a crash after a push
+but before saving it pushes again (tested at crash point `push_sent`). A repeated ping is
+harmless; a lost one could let an approval expire unseen. The stop flag pauses delivery.
+
+**Endpoints** (behind sign-in): `GET /api/push/key`; `POST /api/push/subscribe` and
+`/unsubscribe` (`{endpoint}`, https only, no credentials); `POST /api/notifications/pending`
+(`{endpoint}`, records after the browser's `shownSeq`, oldest first, at most 20; 409 for an
+unknown endpoint); `POST /api/notifications/shown` (`{endpoint, seq}`). A new subscription
+starts at the newest record, so old ones are not replayed.
+
+**Limits.** Push reaches only a browser that is running on a machine where the app is open
+at `127.0.0.1`; phones need remote HTTPS access first. The real push path through a push
+service is not yet checked live.
+
 ## Backups
 
 `src/harness/backup.ts` writes `<dataDir>/backups/<ISO time>/` (folder 0700): `pi.sqlite`
 and `fake-provider.sqlite` through `VACUUM INTO` from a read-only connection, which
 copies one consistent snapshot including WAL commits while the service runs, each
-checked with `PRAGMA integrity_check`; then `workspace/` and `web-token` as files. It
+checked with `PRAGMA integrity_check`; then `workspace/`, `web-token`, and `push-keys.json` as files. It
 writes into `<name>.partial` and renames when complete; a later backup deletes any
 leftover partial (one process owns the data folder). The newest 14 are kept.
 

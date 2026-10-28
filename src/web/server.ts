@@ -84,6 +84,21 @@ function readCookie(incomingRequest: IncomingMessage, name: string) {
   return undefined;
 }
 
+// The server posts to this address, so it must be a plain https URL like the ones browsers issue.
+function requirePushEndpoint(body: Record<string, unknown>) {
+  const endpoint = requireString(body, 'endpoint', 2048);
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    throw new HttpError(400, 'Invalid endpoint');
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) {
+    throw new HttpError(400, 'Push endpoint must be an https URL');
+  }
+  return endpoint;
+}
+
 const routineChangeCommands = { pause: 'pauseRoutine', resume: 'resumeRoutine', delete: 'deleteRoutine' } as const;
 const sessionCookieName = 'rahat_session';
 // 400 days is the longest cookie lifetime browsers accept.
@@ -184,6 +199,10 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
         sendJson(response, 200, { signedIn: true });
         return;
       }
+      if (path === '/api/push/key') {
+        sendJson(response, 200, { publicKey: app.notifier.keys.publicKey });
+        return;
+      }
       if (path === '/api/events') {
         response.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', Connection: 'keep-alive' });
         response.write('retry: 1000\n\n');
@@ -243,6 +262,27 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
     if (path === '/api/memories/forget') {
       const id = requireString(body, 'id', 200);
       sendJson(response, 200, await app.dispatch({ name: 'forget', id }));
+      return;
+    }
+    if (path === '/api/push/subscribe') {
+      sendJson(response, 200, await app.subscribePush(requirePushEndpoint(body)));
+      return;
+    }
+    if (path === '/api/push/unsubscribe') {
+      sendJson(response, 200, await app.unsubscribePush(requirePushEndpoint(body)));
+      return;
+    }
+    // POST so the endpoint travels in the body, not in a URL that could be logged.
+    if (path === '/api/notifications/pending') {
+      sendJson(response, 200, { notifications: await app.pendingNotifications(requirePushEndpoint(body)) });
+      return;
+    }
+    if (path === '/api/notifications/shown') {
+      const seq = body.seq;
+      if (typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq <= 0) {
+        throw new HttpError(400, 'Invalid seq');
+      }
+      sendJson(response, 200, await app.markNotificationsShown(requirePushEndpoint(body), seq));
       return;
     }
     if (path === '/api/routines') {

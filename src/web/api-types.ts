@@ -151,5 +151,21 @@ export type ForgetMemoryResponse = { forgotten: string };
 export type RoutineChangeRequest = { id: string; change: 'pause' | 'resume' | 'delete' };
 export type RoutineChangeResponse = { id: string; status: 'active' | 'paused' | 'deleted' };
 
+// Web push. Pushes carry no content: they wake the service worker, which asks for the text.
+// GET /api/push/key → 200 PushKeyResponse, the key to pass to pushManager.subscribe().
+export type PushKeyResponse = { publicKey: string };
+// POST /api/push/subscribe and /api/push/unsubscribe → 200 PushSubscriptionResponse; 400 unless https.
+// A new subscription starts at the newest notification, so old ones are not replayed.
+export type PushSubscriptionRequest = { endpoint: string };
+export type PushSubscriptionResponse = { subscribed: boolean };
+// POST /api/notifications/pending → 200 PendingNotificationsResponse, oldest first, at most 20;
+// 409 when the endpoint is not subscribed.
+export type AppNotification = { id: string; seq: number; title: string; body: string; createdAt: number };
+export type PendingNotificationsRequest = { endpoint: string };
+export type PendingNotificationsResponse = { notifications: AppNotification[] };
+// POST /api/notifications/shown → 200 NotificationsShownResponse, after showing up to `seq`.
+export type NotificationsShownRequest = { endpoint: string; seq: number };
+export type NotificationsShownResponse = { shownSeq: number };
+
 // Any non-2xx response.
 export type ApiError = { error: string };

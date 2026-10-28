@@ -1,6 +1,7 @@
 import type { Harness } from '@earendil-works/pi-durable';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { AppDoc } from '../harness/state.js';
+import { NotificationsDoc, addNotification, notificationTexts } from '../harness/notifications.js';
 import { canExecute } from './actions.js';
 import { FakeSender } from './fake-sender.js';
 import { crashAt } from '../config.js';
@@ -25,6 +26,7 @@ export class Executor {
   }
   async reconcile() {
     const state = await this.harness.snapshot(AppDoc, context);
+    const notifications = await this.harness.snapshot(NotificationsDoc, context);
     for (const action of Object.values(state?.actions ?? {})) {
       if (action.status !== 'unknown') {
         continue;
@@ -41,6 +43,14 @@ export class Executor {
         }, context);
       }
       // No receipt cannot prove dispatch failed; resending could duplicate an external write.
+      // Tell the owner once, only after reconcile looked, so a crash just after a real
+      // send (receipt found above) never raises a false alarm.
+      if (!receipt && !notifications?.records[notificationTexts.sendUnknown(action.id).id]) {
+        await this.harness.commit(
+          transaction => addNotification(transaction, notificationTexts.sendUnknown(action.id), this.now()),
+          context,
+        );
+      }
     }
   }
   async tick() {
@@ -64,6 +74,7 @@ export class Executor {
         if (!canExecute(action, this.now())) {
           action.status = 'failed';
           action.error = 'Approval expired or payload hash changed';
+          await addNotification(transaction, notificationTexts.sendFailed(action.id, 'approval expired or the draft changed'), this.now());
           return null;
         }
         action.status = 'executing';

@@ -2,6 +2,7 @@ import { Type } from '@earendil-works/pi-ai';
 import { defineTool, type ToolExecutionResult } from '@earendil-works/pi-durable';
 import { AppDoc, type Action } from '../harness/state.js';
 import { proposeAction } from '../executor/actions.js';
+import { addNotification, notificationTexts } from '../harness/notifications.js';
 import { createRoutine } from './routines.js';
 import type { CalendarAdapter } from './calendar.js';
 import { MemoryIndex } from './memory.js';
@@ -72,7 +73,9 @@ export function buildTools(memoryIndex: MemoryIndex, calendar: CalendarAdapter, 
         const action = await toolRuntime.commit(async transaction => {
           const state = await transaction.doc(AppDoc);
           state.actions[toolRuntime.taskId] ??= proposeAction(String(toolRuntime.taskId), toolArguments, toolRuntime.now());
-          return JSON.parse(JSON.stringify(state.actions[toolRuntime.taskId]));
+          const action = state.actions[toolRuntime.taskId];
+          await addNotification(transaction, notificationTexts.approvalWaiting(action.id, action.expiresAt, timezone), toolRuntime.now());
+          return JSON.parse(JSON.stringify(action));
         }, context);
         crashAt('action_proposed');
         return toolResult(action);

@@ -1,6 +1,7 @@
 import { defineTask, type Tx, type ConversationId } from '@earendil-works/pi-durable';
 import { AppDoc, type Routine } from '../harness/state.js';
 import { crashAt } from '../config.js';
+import { addNotification, notificationTexts } from '../harness/notifications.js';
 import { fixedUtcOffsetMs } from '../timezone.js';
 
 const dayMilliseconds = 86400000;
@@ -78,18 +79,30 @@ export const BriefingTask = defineTask<{ routineId: string }, RoutineCheckpoint,
       crashAt('routine_submitted');
       const settledSubmission = await submission.wait(context);
       await runtime.commit(async transaction => {
-        const routineRun = (await transaction.doc(AppDoc)).routineRuns[runId];
+        const state = await transaction.doc(AppDoc);
+        const routineRun = state.routineRuns[runId];
         routineRun.submissionId = submission.id;
         routineRun.status = settledSubmission.status === 'done' ? 'succeeded' : 'failed';
+        await addNotification(
+          transaction,
+          notificationTexts.routineFinished(runId, state.routines[routineRun.routineId].name, routineRun.status === 'succeeded'),
+          runtime.now(),
+        );
         return { status: 'running', checkpoint: { phase: 'wait' } };
       }, context);
     },
   },
   abort: (task, runtime, context) => runtime.commit(async transaction => {
     if (task.state.checkpoint.phase === 'deliver') {
-      const routineRun = (await transaction.doc(AppDoc)).routineRuns[task.state.checkpoint.runId];
+      const state = await transaction.doc(AppDoc);
+      const routineRun = state.routineRuns[task.state.checkpoint.runId];
       if (routineRun?.status === 'running') {
         routineRun.status = 'failed';
+        await addNotification(
+          transaction,
+          notificationTexts.routineFinished(routineRun.id, state.routines[routineRun.routineId].name, false),
+          runtime.now(),
+        );
       }
     }
     return { status: 'terminal', outcome: { status: 'aborted' } };

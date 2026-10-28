@@ -308,6 +308,36 @@ describe('local web UI', () => {
     }
   });
 
+  it('serves the push key and lets only a signed-in browser subscribe and read its notifications', async () => {
+    const fixture = await webFixture();
+    const endpoint = 'https://push.example/browser-1';
+    try {
+      expect((await fetch(fixture.baseUrl + '/api/push/key')).status).toBe(401);
+      const keyResponse = await fetch(fixture.baseUrl + '/api/push/key', { headers: { 'X-Rahat-Token': fixture.token } });
+      expect(await keyResponse.json()).toEqual({ publicKey: fixture.app.notifier.keys.publicKey });
+      for (const path of ['/api/push/subscribe', '/api/push/unsubscribe', '/api/notifications/pending', '/api/notifications/shown']) {
+        expect((await post(fixture.baseUrl, '', path, { endpoint, seq: 1 })).status).toBe(401);
+      }
+      for (const badEndpoint of ['http://push.example/plain', 'https://user:secret@push.example/a', 'not a url', '']) {
+        expect((await post(fixture.baseUrl, fixture.token, '/api/push/subscribe', { endpoint: badEndpoint })).status).toBe(400);
+      }
+      expect((await post(fixture.baseUrl, fixture.token, '/api/notifications/pending', { endpoint })).status).toBe(409);
+
+      expect(await (await post(fixture.baseUrl, fixture.token, '/api/push/subscribe', { endpoint })).json()).toEqual({ subscribed: true });
+      await fixture.app.dispatch({ name: 'testNotification' });
+      const pending = await (await post(fixture.baseUrl, fixture.token, '/api/notifications/pending', { endpoint })).json();
+      expect(pending).toMatchObject({ notifications: [{ title: 'Test notification', body: 'Notifications from Rahat-PI work.' }] });
+      const seq = pending.notifications[0].seq;
+      expect((await post(fixture.baseUrl, fixture.token, '/api/notifications/shown', { endpoint, seq: 'one' })).status).toBe(400);
+      expect(await (await post(fixture.baseUrl, fixture.token, '/api/notifications/shown', { endpoint, seq })).json()).toEqual({ shownSeq: seq });
+      expect(await (await post(fixture.baseUrl, fixture.token, '/api/notifications/pending', { endpoint })).json()).toEqual({ notifications: [] });
+
+      expect(await (await post(fixture.baseUrl, fixture.token, '/api/push/unsubscribe', { endpoint })).json()).toEqual({ subscribed: false });
+      expect((await post(fixture.baseUrl, fixture.token, '/api/notifications/pending', { endpoint })).status).toBe(409);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
   it('shows routines in the live state and pauses, resumes, and deletes one only when signed in', async () => {
     const fixture = await webFixture();
     try {

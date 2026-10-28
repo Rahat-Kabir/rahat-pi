@@ -6,11 +6,16 @@ What changed, step by step, newest first. Each entry says what was built and how
 
 - [x] API contract (`src/web/api-types.ts`) and safe serving of the built app at `/app/`
 - [x] App shell (React + Vite + Tailwind), installable; chat and approvals
-- [ ] Notifications when an approval is needed or a routine finishes
+- [ ] Notifications when an approval is needed or a routine finishes (brain done; app next)
 - [x] Memories: owner CLI commands, then endpoint and screen
 - [x] Routines: owner CLI commands first, then endpoints and screens
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
+
+### Notifications, brain side (2026-10-28)
+The brain records a notification in the same commit as its event: approval waiting, approval expiring in 2 h, send failed or unknown, routine finished/failed, task stopped, and `notify-test`. Text is a fixed minimal template.
+Browsers subscribe through new signed-in endpoints; the service pushes each an empty VAPID-signed ping (no content, no new dependency) with backoff, at least once. Keys live in `data/push-keys.json` and are backed up.
+Verified: 5 notification tests, web endpoint test, SIGKILL tests (after a proposal, during a send with and without a receipt, after a push attempt), stopped-task notify in the health crash test, backup restore keeps the key, full offline suite, evals, typecheck, app build; `notify-test` and the key endpoint against the running service. Not yet: the app's service worker and a live push.
 
 ### Assistant replies render as Markdown (2026-10-28)
 Replies showed raw `**bold**` and `- ` because the app printed all model text as plain text. Assistant replies now go through `react-markdown` 10.1.0 (new app dependency, owner-approved); owner, tool, and thinking text stay plain.

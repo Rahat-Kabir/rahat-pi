@@ -152,6 +152,7 @@ npm run cli -- outbox           # the fake outbox shows one sent message
 | `npm run cli -- stats [--json]` | Spend and health statistics |
 | `npm run cli -- health` / `retry <taskId>` | Tasks that stopped after repeated crashes; run one again |
 | `npm run cli -- backup` | Save a backup now (the service also saves one daily) |
+| `npm run cli -- notify-test` | Send a test notification to every browser with notifications on |
 | `npm run cli -- stop` | Kill switch: stops the service and cancels running work |
 | `npm run demo` | Free offline walkthrough of memory, approvals, and send-once |
 | `npm run eval` | 15 free offline scenario checks with a JSON report |
@@ -234,7 +235,7 @@ A clean `stop` is never restarted, so the kill switch keeps working.
 The running service saves a backup once a day in `data/backups/<time>/` and keeps the
 newest 14. Run `npm run cli -- backup` for one now (for example before an update).
 Each backup holds both databases (checked for corruption), the agent's workspace, and
-the web token. Backups sit on the same disk as the agent: copy `data/backups/` elsewhere
+the web token, and the push key. Backups sit on the same disk as the agent: copy `data/backups/` elsewhere
 if you need to survive a disk failure.
 
 To restore, stop the agent, put the current data aside, and copy a backup in:

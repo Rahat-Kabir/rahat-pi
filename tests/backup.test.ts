@@ -12,13 +12,15 @@ describe('backups', () => {
     const original = temporaryData();
     const restored = temporaryData();
     const app = await App.open(offlineConfig(original.dataDir));
+    // Subscribed browsers are bound to this key pair, so a restore must keep it.
+    const pushPublicKey = app.notifier.keys.publicKey;
     try {
       await app.dispatch({ name: 'chat', message: toolMessage('memory_write', { content: 'Prefers green tea', source: 'owner' }) });
       await app.dispatch({ name: 'chat', message: toolMessage('workspace_write', { path: 'notes.txt', content: 'kept' }) });
       const { backup, kept } = await app.dispatch({ name: 'backup' }) as { backup: string; kept: number };
       expect(kept).toBe(1);
       // No web server ran here, so there is no web token to copy.
-      expect(readdirSync(backup).sort()).toEqual(['fake-provider.sqlite', 'pi.sqlite', 'workspace']);
+      expect(readdirSync(backup).sort()).toEqual(['fake-provider.sqlite', 'pi.sqlite', 'push-keys.json', 'workspace']);
       expect(statSync(backupsDirectory(original.dataDir)).mode & 0o777).toBe(0o700);
       cpSync(backup, restored.dataDir, { recursive: true });
     } finally {
@@ -29,6 +31,7 @@ describe('backups', () => {
     try {
       expect((await restoredApp.dispatch({ name: 'memories' }) as { content: string }[]).map(memory => memory.content)).toEqual(['Prefers green tea']);
       expect(readFileSync(join(restored.dataDir, 'workspace', 'notes.txt'), 'utf8')).toBe('kept');
+      expect(restoredApp.notifier.keys.publicKey).toBe(pushPublicKey);
     } finally {
       await restoredApp.close();
       restored.cleanup();

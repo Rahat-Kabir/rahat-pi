@@ -16,8 +16,14 @@ import { type Config, crashAt } from '../config.js';
 import { MemoryIndex } from '../extensions/memory.js';
 import { readStoppedTasks } from './health.js';
 import { backupIntervalMs, createBackup, newestBackupTime } from './backup.js';
+import {
+  NotificationsDoc, addNotification, approvalExpiresSoon, latestSeq, notificationTexts, subscriptionId,
+} from './notifications.js';
+import { Notifier, loadOrCreatePushKeys, sendWebPush, type PushSender } from './push.js';
 
 const backupCheckIntervalMs = 60 * 60 * 1000;
+const notificationCheckIntervalMs = 30 * 1000;
+const maximumPendingNotifications = 20;
 import { FixtureCalendar } from '../extensions/calendar.js';
 import { buildTools } from '../extensions/tools.js';
 import { buildWebFetchTool, WebResearch } from '../extensions/web-research.js';
@@ -33,7 +39,7 @@ import { approveAction, editAction } from '../executor/actions.js';
 
 export type Command =
   | { name: 'chat'; message: string; requestId?: string }
-  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' | 'health' | 'backup' | 'routines' }
+  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' | 'health' | 'backup' | 'routines' | 'testNotification' }
   | { name: 'retry'; taskId: number }
   | { name: 'forget'; id: string }
   | { name: 'pauseRoutine' | 'resumeRoutine' | 'deleteRoutine'; id: string }
@@ -58,12 +64,14 @@ const compactionInstructions = 'Preserve key conversation facts, exact names and
 export class App {
   private sender: FakeSender;
   readonly executor: Executor;
+  readonly notifier: Notifier;
   private watchdog: NodeJS.Timeout | undefined;
   private closed = false;
   private watchdogWork: Promise<void> | undefined;
   private queue: Promise<unknown> = Promise.resolve();
   private finishedTaskIds = new Set<number>();
   private lastBackupCheck = Number.NEGATIVE_INFINITY;
+  private lastNotificationCheck = Number.NEGATIVE_INFINITY;
   private constructor(
     readonly config: Config,
     readonly harness: Harness,
@@ -71,11 +79,13 @@ export class App {
     private releaseLock: () => Promise<void>,
     private memoryIndex: MemoryIndex,
     private storage: Storage,
+    sendPush: PushSender,
   ) {
     this.sender = new FakeSender(join(config.dataDir, 'fake-provider.sqlite'));
     this.executor = new Executor(harness, this.sender, config.now, () => this.stopRequested);
+    this.notifier = new Notifier(harness, loadOrCreatePushKeys(config.dataDir), sendPush, config.now, () => this.stopRequested);
   }
-  static async open(config: Config, webResearch = new WebResearch()) {
+  static async open(config: Config, webResearch = new WebResearch(), sendPush: PushSender = sendWebPush) {
     mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
     // mkdir's mode only applies to a new folder; also make private one that a script or test created earlier.
     chmodSync(config.dataDir, 0o700);
@@ -161,7 +171,7 @@ export class App {
       // Config is authoritative on reopen, too (root options only apply at first creation).
       await root.configure({ model: modelRef, tools }, context);
       await initializeCosts(harness);
-      const app = new App(config, harness, root, releaseLock, memoryIndex, storage);
+      const app = new App(config, harness, root, releaseLock, memoryIndex, storage, sendPush);
       await app.executor.recover();
       app.startWatchdog();
       return app;
@@ -277,6 +287,8 @@ export class App {
         return { stoppedTasks: await this.stoppedTasks() };
       case 'backup':
         return createBackup(this.config.dataDir);
+      case 'testNotification':
+        return this.addTestNotification();
       case 'retry':
         return this.retryStoppedTask(command.taskId);
       case 'state':
@@ -320,6 +332,101 @@ export class App {
     } catch (error) {
       console.error(`Backup failed; trying again in an hour: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+  // Called by the service loop. Stopped tasks and expiring approvals have no commit of
+  // their own to record a notification in, so they are checked on a timer.
+  async checkNotificationTriggersIfDue(now = Date.now()) {
+    if (now - this.lastNotificationCheck < notificationCheckIntervalMs) {
+      return;
+    }
+    this.lastNotificationCheck = now;
+    await this.checkNotificationTriggers();
+  }
+  async checkNotificationTriggers() {
+    const now = this.config.now();
+    const stoppedTasks = await this.stoppedTasks();
+    const actions = Object.values((await this.harness.snapshot(AppDoc, context))?.actions ?? {});
+    const expiringActions = actions.filter(action => action.status === 'proposed' && approvalExpiresSoon(action.expiresAt, now));
+    const notifications = await this.harness.snapshot(NotificationsDoc, context);
+    const notifiedStoppedTaskIds = Object.keys(notifications?.notifiedStoppedTaskIds ?? {});
+    const nothingChanged = stoppedTasks.every(task => notifications?.notifiedStoppedTaskIds[task.taskId])
+      && notifiedStoppedTaskIds.every(taskId => stoppedTasks.some(task => String(task.taskId) === taskId))
+      && expiringActions.every(action => notifications?.records[notificationTexts.approvalExpiring(action.id, action.expiresAt, this.config.timezone).id]);
+    // Most checks find nothing; skip the commit so idle checks do not grow storage.
+    if (nothingChanged) {
+      return;
+    }
+    await this.harness.commit(async transaction => {
+      const currentNotifications = await transaction.doc(NotificationsDoc);
+      for (const taskId of Object.keys(currentNotifications.notifiedStoppedTaskIds)) {
+        if (!stoppedTasks.some(task => String(task.taskId) === taskId)) {
+          delete currentNotifications.notifiedStoppedTaskIds[taskId];
+        }
+      }
+      for (const task of stoppedTasks) {
+        if (!currentNotifications.notifiedStoppedTaskIds[task.taskId]) {
+          currentNotifications.notifiedStoppedTaskIds[task.taskId] = true;
+          await addNotification(transaction, notificationTexts.taskStopped(task.taskId, currentNotifications.nextSeq, task.label), now);
+        }
+      }
+      for (const action of expiringActions) {
+        await addNotification(transaction, notificationTexts.approvalExpiring(action.id, action.expiresAt, this.config.timezone), now);
+      }
+    }, context);
+  }
+  private async addTestNotification() {
+    const now = this.config.now();
+    await this.harness.commit(transaction => addNotification(transaction, notificationTexts.test(now), now), context);
+    const subscriptions = Object.keys((await this.harness.snapshot(NotificationsDoc, context))?.subscriptions ?? {}).length;
+    return { notification: 'test', subscriptions };
+  }
+  // A new subscription starts at the newest record, so enabling notifications does not replay old ones.
+  async subscribePush(endpoint: string) {
+    return this.harness.commit(async transaction => {
+      const notifications = await transaction.doc(NotificationsDoc);
+      const id = subscriptionId(endpoint);
+      notifications.subscriptions[id] ??= {
+        endpoint,
+        createdAt: this.config.now(),
+        pushedSeq: latestSeq(notifications),
+        shownSeq: latestSeq(notifications),
+        failures: 0,
+        nextAttemptAt: 0,
+      };
+      return { subscribed: true };
+    }, context);
+  }
+  async unsubscribePush(endpoint: string) {
+    return this.harness.commit(async transaction => {
+      delete (await transaction.doc(NotificationsDoc)).subscriptions[subscriptionId(endpoint)];
+      return { subscribed: false };
+    }, context);
+  }
+  // The service worker asks what to show after a push; records it showed are acknowledged separately.
+  async pendingNotifications(endpoint: string) {
+    const notifications = await this.harness.snapshot(NotificationsDoc, context);
+    const subscription = notifications?.subscriptions[subscriptionId(endpoint)];
+    if (!notifications || !subscription) {
+      throw new Error('Push subscription not found');
+    }
+    return Object.values(notifications.records)
+      .filter(notification => notification.seq > subscription.shownSeq)
+      .sort((first, second) => first.seq - second.seq)
+      .slice(0, maximumPendingNotifications);
+  }
+  async markNotificationsShown(endpoint: string, seq: number) {
+    return this.harness.commit(async transaction => {
+      const notifications = await transaction.doc(NotificationsDoc);
+      const subscription = notifications.subscriptions[subscriptionId(endpoint)];
+      if (!subscription) {
+        throw new Error('Push subscription not found');
+      }
+      if (seq > latestSeq(notifications)) {
+        throw new Error('Unknown notification');
+      }
+      subscription.shownSeq = Math.max(subscription.shownSeq, seq);
+      return { shownSeq: subscription.shownSeq };
+    }, context);
   }
   async stoppedTasks() {
     const view = await this.root.viewState(context);
@@ -544,6 +651,8 @@ export class App {
       }
     }
     await this.executor.tick();
+    await this.checkNotificationTriggers();
+    await this.notifier.tick();
     return { ticked: true };
   }
 

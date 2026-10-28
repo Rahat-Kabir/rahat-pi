@@ -89,6 +89,10 @@ Safe crash recovery and trustworthy approvals are the main constraint.
 - `pi.sqlite` runs with `synchronous=FULL` (`src/harness/storage.ts`). Chord's
   default NORMAL survives a process crash but can lose the newest commits on
   power loss, such as an approval or a `succeeded` status.
+- Notifications are fixed brain templates recorded in the event's own commit and
+  delivered at least once (a repeat is harmless; a lost "approval waiting" is not), unlike
+  sends, which are never retried. Pushes are empty VAPID pings: the service worker reads
+  the text from the brain, so push services see nothing and no crypto library is needed.
 - Two supervision options: `deploy/rahat-pi.service` for systemd hosts and
   `deploy/supervise.sh` for hosts without systemd (for example containers whose
   PID 1 is tini). Both treat a clean exit as final so `stop` stays a kill switch.
@@ -101,7 +105,7 @@ npm test               # vitest, offline (all files)
 npm run test:crash     # SIGKILL restart tests only
 npm run test:linux     # Windows: full Linux suite in WSL on the current files
 npx tsc --noEmit
-npm run cli -- chat    # terminal chat; also: run, web, stop, actions, approve <id>, memories, forget <id>, routines, routine pause|resume|delete <id>, health, retry <taskId>, backup, stats
+npm run cli -- chat    # terminal chat; also: run, web, stop, actions, approve <id>, memories, forget <id>, routines, routine pause|resume|delete <id>, health, retry <taskId>, backup, notify-test, stats
 npm run demo           # free offline walkthrough (memory, approvals, send-once)
 npm run eval           # 15 offline evals with a JSON report
 npm run web:snapshot   # save static web UI HTML to data/web-snapshot.html

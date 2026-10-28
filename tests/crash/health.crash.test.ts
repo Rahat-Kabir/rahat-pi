@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { App } from '../../src/harness/app.js';
 import type { StoppedTask } from '../../src/harness/health.js';
+import { NotificationsDoc } from '../../src/harness/notifications.js';
 import { cli, jsonOutput, offlineConfig, temporaryData, toolMessage } from '../helpers.js';
 
 const restartLimit = 5;
@@ -43,6 +44,20 @@ it('lists a tool parked after repeated crashes and runs it again on retry', asyn
     ]);
     expect((await cli(temporaryStorage.dataDir, ['stats', '--json'])).stdout).toContain('"parked": 1');
     const [stoppedTask] = health.stoppedTasks;
+    // A parked task fails silently, so it notifies the owner once, however often the check runs.
+    const notifyingApp = await App.open(offlineConfig(temporaryStorage.dataDir));
+    try {
+      await notifyingApp.checkNotificationTriggers();
+      await notifyingApp.checkNotificationTriggers();
+      const notifications = (await notifyingApp.harness.snapshot(NotificationsDoc, context))!;
+      expect(Object.values(notifications.records)).toMatchObject([{
+        title: 'Task stopped',
+        body: 'Tool call (memory_write) stopped after repeated crashes. Open Rahat-PI to retry it.',
+      }]);
+      expect(notifications.notifiedStoppedTaskIds).toEqual({ [stoppedTask.taskId]: true });
+    } finally {
+      await notifyingApp.close();
+    }
 
     expect(jsonOutput(await cli(temporaryStorage.dataDir, ['retry', String(stoppedTask.taskId)])))
       .toEqual({ retried: stoppedTask.taskId, label: 'Tool call (memory_write)' });
@@ -51,6 +66,9 @@ it('lists a tool parked after repeated crashes and runs it again on retry', asyn
       app.harness.resume();
       await app.harness.waitForIdle(context);
       expect(await app.dispatch({ name: 'health' })).toEqual({ stoppedTasks: [] });
+      // Running again clears the mark, so a later stop of the same task notifies again.
+      await app.checkNotificationTriggers();
+      expect((await app.harness.snapshot(NotificationsDoc, context))!.notifiedStoppedTaskIds).toEqual({});
       expect((await app.dispatch({ name: 'memories' }) as { content: string }[]).map(memory => memory.content))
         .toEqual(['Survives a crash loop']);
       await expect(app.dispatch({ name: 'retry', taskId: stoppedTask.taskId })).rejects.toThrow('No stopped task with that id');

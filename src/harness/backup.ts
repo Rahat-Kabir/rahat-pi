@@ -5,7 +5,8 @@ import { join } from 'node:path';
 export const backupKeepCount = 14;
 export const backupIntervalMs = 24 * 60 * 60 * 1000;
 const databaseFiles = ['pi.sqlite', 'fake-provider.sqlite'];
-const copiedEntries = ['workspace', 'web-token'];
+// The push keys are kept so browsers subscribed before a restore still receive pushes.
+const copiedEntries = ['workspace', 'web-token', 'push-keys.json'];
 // Folder names sort by time: 2026-10-24T21-30-00-000Z.
 const backupNamePattern = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/;
 
