@@ -393,8 +393,8 @@ the main column. The memories view lists `state.memories` (newest first, with so
 and save time) and forgets one after an inline "Forget this for good?" confirmation.
 The routines view shows each routine's schedule, prompt, next and latest run (in the
 routine's own timezone), with Pause/Resume and Delete after a "Delete this routine?"
-confirmation. Done so far: chat, approvals, memories, routines. Still open:
-notifications, activity, removing the old page.
+confirmation. Done so far: chat, approvals, memories, routines, notifications. Still open:
+activity, removing the old page.
 
 ## Sandboxed workspace tools
 
@@ -592,7 +592,7 @@ the memory stored once.
 
 ## Notifications
 
-Brain side only so far; the app's service worker and toggle are the next step.
+Brain side plus the app's service worker and toggle; a live push through a push service is not yet checked.
 
 **Records.** `src/harness/notifications.ts` keeps `NotificationsDoc` (session doc):
 records `{id, seq, title, body, createdAt}`, push subscriptions, and `nextSeq`. Text is a
@@ -631,9 +631,21 @@ harmless; a lost one could let an approval expire unseen. The stop flag pauses d
 unknown endpoint); `POST /api/notifications/shown` (`{endpoint, seq}`). A new subscription
 starts at the newest record, so old ones are not replayed.
 
+**App side.** `ui/src/sw.ts` is a second Vite entry built to a fixed `/app/sw.js` (scope
+`/app/`), a classic script with no imports. On a push it runs `showPendingNotifications`
+(`ui/src/features/notifications/serviceWorker.ts`): ask `pending` with its own endpoint
+(the cookie rides along, same origin), show each record with its id as `tag` (a repeat
+replaces, not duplicates), then post `shown` with the newest `seq`. If the brain cannot be
+asked (signed out, unknown endpoint, offline), it shows a fixed "Something new is waiting"
+instead, so a ping is never silently dropped. Tapping focuses the open app or opens `/app/`.
+The header toggle (`NotificationsToggle`) asks permission, registers the worker, subscribes
+with the brain's key (base64url decoded to bytes), and posts `subscribe`; off tells the
+brain first, then unsubscribes the browser. Push needs a secure page (https, `127.0.0.1`,
+or `localhost`); otherwise the toggle says notifications are not available.
+
 **Limits.** Push reaches only a browser that is running on a machine where the app is open
 at `127.0.0.1`; phones need remote HTTPS access first. The real push path through a push
-service is not yet checked live.
+service is not yet checked live; at most 20 records show per ping, the rest on the next.
 
 ## Backups
 

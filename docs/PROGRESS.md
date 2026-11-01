@@ -6,11 +6,15 @@ What changed, step by step, newest first. Each entry says what was built and how
 
 - [x] API contract (`src/web/api-types.ts`) and safe serving of the built app at `/app/`
 - [x] App shell (React + Vite + Tailwind), installable; chat and approvals
-- [ ] Notifications when an approval is needed or a routine finishes (brain done; app next)
+- [ ] Notifications when an approval is needed or a routine finishes (brain and app done; live push next)
 - [x] Memories: owner CLI commands, then endpoint and screen
 - [x] Routines: owner CLI commands first, then endpoints and screens
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
+
+### Notifications, app side (2026-10-29)
+A header button turns notifications on or off per device. A service worker (`/app/sw.js`) wakes on the empty ping, asks the brain for the text, shows each record, and acknowledges it. If the brain can't be asked, it shows a fixed "Something new is waiting".
+Verified: 5 app tests (show and acknowledge in order, repeat ping shows nothing, fallback on 401/409/offline/no subscription, key decoding, labels), app build. Headless Chrome against an offline service: on → real subscription saved; simulated local push → worker reached the brain with the cookie; unknown device → fallback shown; off → unsubscribed. Not yet: a live push through a push service.
 
 ### Notifications, brain side (2026-10-28)
 The brain records a notification in the same commit as its event: approval waiting, approval expiring in 2 h, send failed or unknown, routine finished/failed, task stopped, and `notify-test`. Text is a fixed minimal template.

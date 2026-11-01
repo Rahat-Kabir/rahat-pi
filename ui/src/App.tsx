@@ -57,7 +57,7 @@ export function App() {
 
   return (
     <div className="flex h-dvh flex-col bg-slate-50 dark:bg-slate-950">
-      <Header connected={signInStatus === 'signedIn' && connected} />
+      <Header connected={signInStatus === 'signedIn' && connected} signedIn={signInStatus === 'signedIn'} />
       {signInStatus === 'signedOut' && <SignIn onSignedIn={() => setSignInStatus('signedIn')} />}
       {signInStatus === 'checking' && <p className="p-8 text-center text-sm text-slate-500">Connecting to Rahat-PI…</p>}
       {signInStatus === 'signedIn' && state && <StoppedTasksBanner stoppedTasks={state.stoppedTasks} />}

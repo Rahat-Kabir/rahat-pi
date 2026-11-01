@@ -1,5 +1,6 @@
 import type {
   ActionDecisionRequest, ApiError, ForgetMemoryRequest, ForgetMemoryResponse, MessageRequest, MessageResponse,
+  PushKeyResponse, PushSubscriptionRequest, PushSubscriptionResponse,
   RetryTaskRequest, RetryTaskResponse, RoutineChangeRequest, RoutineChangeResponse, SessionResponse, SignInRequest,
 } from '@api';
 
@@ -62,6 +63,18 @@ export function forgetMemory(request: ForgetMemoryRequest) {
 
 export function changeRoutine(request: RoutineChangeRequest) {
   return post<RoutineChangeResponse>('/api/routines', request);
+}
+
+export async function getPushKey() {
+  return readResponse<PushKeyResponse>(await fetch('/api/push/key'));
+}
+
+export function subscribePush(request: PushSubscriptionRequest) {
+  return post<PushSubscriptionResponse>('/api/push/subscribe', request);
+}
+
+export function unsubscribePush(request: PushSubscriptionRequest) {
+  return post<PushSubscriptionResponse>('/api/push/unsubscribe', request);
 }
 
 // Turns API failures into a sentence the owner can act on.

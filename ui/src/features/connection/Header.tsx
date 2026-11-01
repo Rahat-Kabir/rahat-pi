@@ -1,4 +1,6 @@
-export function Header({ connected }: { connected: boolean }) {
+import { NotificationsToggle } from '../notifications/NotificationsToggle';
+
+export function Header({ connected, signedIn }: { connected: boolean; signedIn: boolean }) {
   return (
     <header className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
       <img src="/app/icon.svg" alt="" className="h-8 w-8" />
@@ -7,6 +9,7 @@ export function Header({ connected }: { connected: boolean }) {
         <span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-red-500'}`} />
         {connected ? 'Connected' : 'Reconnecting…'}
       </span>
+      {signedIn && <NotificationsToggle />}
     </header>
   );
 }
