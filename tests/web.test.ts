@@ -470,4 +470,57 @@ describe('local web UI', () => {
       await fixture.cleanup();
     }
   });
+
+  it('serves each bot its own conversation and refuses unknown bots', async () => {
+    const fixture = await webFixture();
+    try {
+      const created = await post(fixture.baseUrl, fixture.token, '/api/bots', { name: 'Web Bot' });
+      expect(created.status).toBe(200);
+      const bot = await created.json() as { id: string; name: string };
+      expect(bot).toEqual({ id: expect.any(String), name: 'Web Bot' });
+      const defaultState = await readState(fixture.baseUrl, fixture.token);
+      expect(defaultState.bots.map((each) => each.name)).toEqual(['Rahat-PI', 'Web Bot']);
+      expect(defaultState.entries).toHaveLength(0);
+      // A message names its bot, and only that bot's state shows it.
+      const admitted = await post(fixture.baseUrl, fixture.token, '/api/messages', { message: 'hello bot over http', botId: bot.id });
+      expect(admitted.status).toBe(202);
+      await vi.waitFor(async () => {
+        const botState = await (await fetch(`${fixture.baseUrl}/api/state?bot=${bot.id}`, { headers: { 'X-Rahat-Token': fixture.token } })).json() as WebState;
+        expect(JSON.stringify(botState.entries)).toContain('Offline reply: hello bot over http');
+      });
+      const untouchedState = await readState(fixture.baseUrl, fixture.token);
+      expect(JSON.stringify(untouchedState.entries)).not.toContain('hello bot over http');
+      // Unknown bots are refused on every route that names one.
+      for (const request of [
+        fetch(`${fixture.baseUrl}/api/state?bot=missing`, { headers: { 'X-Rahat-Token': fixture.token } }),
+        fetch(`${fixture.baseUrl}/api/events?bot=missing`, { headers: { 'X-Rahat-Token': fixture.token } }),
+        post(fixture.baseUrl, fixture.token, '/api/messages', { message: 'x', botId: 'missing' }),
+      ]) {
+        expect((await request).status).toBe(409);
+      }
+      expect((await post(fixture.baseUrl, fixture.token, '/api/bots', { name: ' ' })).status).toBe(400);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('refuses a bot that was deleted after its view was cached', async () => {
+    const fixture = await webFixture();
+    try {
+      const created = await post(fixture.baseUrl, fixture.token, '/api/bots', { name: 'Doomed' });
+      const bot = await created.json() as { id: string };
+      // Reading the bot's state caches its conversation view; deletion must still refuse the id.
+      const botState = await fetch(`${fixture.baseUrl}/api/state?bot=${bot.id}`, { headers: { 'X-Rahat-Token': fixture.token } });
+      expect(botState.status).toBe(200);
+      await fixture.app.dispatch({ name: 'deleteBot', id: bot.id });
+      for (const request of [
+        fetch(`${fixture.baseUrl}/api/state?bot=${bot.id}`, { headers: { 'X-Rahat-Token': fixture.token } }),
+        fetch(`${fixture.baseUrl}/api/events?bot=${bot.id}`, { headers: { 'X-Rahat-Token': fixture.token } }),
+      ]) {
+        expect((await request).status).toBe(409);
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
 });

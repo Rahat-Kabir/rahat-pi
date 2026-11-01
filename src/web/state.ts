@@ -2,7 +2,6 @@ import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import type { ConversationView, LiveState, InboxState } from '@earendil-works/pi-durable';
 import { App } from '../harness/app.js';
 import { AppDoc } from '../harness/state.js';
-import { readStoppedTasks } from '../harness/health.js';
 
 export async function readWebState(app: App, conversationView: ConversationView) {
   const state = await app.harness.snapshot(AppDoc, context);
@@ -21,7 +20,8 @@ export async function readWebState(app: App, conversationView: ConversationView)
     subagents: await app.listSubagents(),
     memories: await app.listMemories(),
     routines: await app.listRoutines(),
-    stoppedTasks: await readStoppedTasks(app.harness, app.root.id, (conversationView.docs['pi.live'] as LiveState | undefined)?.tools ?? []),
+    bots: (await app.listBots()).map(bot => ({ id: bot.id, name: bot.name, createdAt: bot.createdAt })),
+    stoppedTasks: await app.stoppedTasks(),
     stats: await app.stats(),
   };
 }

@@ -17,7 +17,8 @@ acquiring that lock. Concurrent standalone commands fail clearly when another ow
 
 `src/harness/app.ts` opens `data/pi.sqlite` through `openPiStorage` (WAL, `synchronous=FULL`;
 chord's default NORMAL can lose the newest commits on power loss), installs the
-`rahat.personal` extension, and creates/reopens the root conversation. Tools and
+`rahat.personal` extension, and creates/reopens the root conversation. The root is
+adopted once as the default bot in the `rahat.bots` registry (see Bots). Tools and
 model configuration are reapplied on open. Pi persists model steps, tool tasks,
 transcripts, request IDs, and document commits. `watchEvents` drives live tool-call display. Final assistant text is read from the
 committed answer and printed once after completion, avoiding incomplete event deltas. The curated profile is a system section. The main agent has the four confined
@@ -31,6 +32,46 @@ and README examples. The official Pi Durable 1.4.0 examples (in the
 provide the foreground/background subagent and child-task patterns. APIs used
 here are those shipped in 1.4.0; the community 1.2.0 library is not a dependency.
 Background: [Pi Durable announcement](https://earendil.com/posts/pi-durable/).
+
+## Bots
+
+`src/harness/bots.ts` keeps `rahat.bots` (session doc): `{id, name, conversationId,
+createdAt, deleted}`. A bot is a record plus its own ownerless Pi conversation, never
+a process; creation is one commit that makes the conversation, configures the same
+agent the root has, and writes the record, so a bot never exists half-made. On reopen
+every non-deleted bot is reconfigured with the root's current agent, so a model or
+tool change reaches bots created earlier. The
+default bot (`main`, named Rahat-PI) adopts the root conversation once on first open
+and cannot be deleted. Deletion tombstones the record after aborting the bot's
+conversation; history stays in storage, like routine deletion. Names are 1–40
+characters. All bots share the persona, model, tools, and memory in this slice; the
+shared daily/lifetime USD caps cover every bot's runs.
+
+`App.submitMessage(message, whenBusy, requestId?, botId?)` resolves the conversation
+from the registry (root when no bot is named) and submits through the same guards.
+The watchdog loops every bot conversation for the stop flag, run deadlines, and
+compaction deadlines; `stop()` aborts them all; `stoppedTasks()` aggregates every
+bot's view and labels non-default chats `Chat answer (<bot name>)`.
+`reserveModelRequest` (`src/policy/limits.ts`) admits provider sessions of every
+non-deleted bot conversation and still fails closed on unknown sessions.
+
+Web: `GET /api/state?bot=<id>` and `/api/events?bot=<id>` serve that bot's transcript
+(absent means the default bot; unknown ids answer 409). The server attaches one
+conversation view per bot when a client first selects it, so frames carry the selected
+bot's transcript only; the registry is checked on every read, and view creation is
+single-flight; the `rahat.bots` doc watch updates every switcher. `POST
+/api/messages` accepts an optional `botId`; `POST /api/bots` `{name}` creates one.
+The app shows a bot switcher above the chat and reconnects its event stream to the
+selected bot. CLI: `bots` lists, `bot create <name>` and `bot delete <id>` change the
+registry; CLI `chat` stays on the default bot. A deleted bot's id is refused
+everywhere, including a web view cached before deletion, and the app falls back to
+the default bot.
+
+Verified: registry/adoption/create/delete/chat-to-a-bot tests, watchdog abort of a
+busy bot run, reopen reapplying the root agent to every bot, per-bot web routes (409
+unknown and deleted ids, bot-scoped transcripts), app contract
+and switcher build, and a SIGKILL inside a bot's sandboxed shell that resumes once
+and reports (never reruns) the interrupted command.
 
 ## Application documents and memory
 
@@ -288,9 +329,10 @@ and payload text is HTML-escaped before insertion; model output cannot create
 scripts or approval controls. JSON bodies are limited to 64 KiB and decoded as
 streaming UTF-8. No remote deployment or reverse-proxy mode is included.
 
-`src/web/state.ts` projects Pi's root `viewState()` into active entries (model
+`src/web/state.ts` projects the selected bot's `viewState()` into active entries (model
 role/content only, excluding system messages), `pi.live`, and `pi.inbox`, plus App
-actions and the existing `listSubagents()` statuses. Provider settings and tool
+actions, the existing `listSubagents()` statuses, and the bot list (default first).
+Provider settings and tool
 schemas are not served. `src/web/page.ts` renders that state as escaped HTML;
 `client.js` replaces only the state panel, preserving the message draft/token.
 `GET /` serves the initial page, `/client.js` its script, and `/api/state` JSON.
@@ -706,6 +748,9 @@ OAuth consent, credential storage, scopes, and API integration remain future wor
 
 - A single session document with keyed records replaces separate Pi document families;
   there are no separate Space/Connector records. The only space is implicitly personal.
+- Bots share one persona, model, tool set, memory, and workspace; only the conversation
+  is per-bot. Per-bot routines, models, and memory scopes are future work. Two busy
+  bots can use the shared workspace at once: same-file writes race (last write wins).
 - A daily HH:mm schedule replaces generic cron; only fixed-offset timezones (no DST) are supported.
   Deleted routines retain tombstones/audit history. Only the owner can resume a paused routine.
 - FTS5 is an in-memory rebuildable index; Pi SQLite persists the facts themselves.

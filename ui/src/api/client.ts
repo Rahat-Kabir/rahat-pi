@@ -1,5 +1,6 @@
 import type {
-  ActionDecisionRequest, ApiError, ForgetMemoryRequest, ForgetMemoryResponse, MessageRequest, MessageResponse,
+  ActionDecisionRequest, ApiError, CreateBotRequest, CreateBotResponse, ForgetMemoryRequest, ForgetMemoryResponse,
+  MessageRequest, MessageResponse,
   PushKeyResponse, PushSubscriptionRequest, PushSubscriptionResponse,
   RetryTaskRequest, RetryTaskResponse, RoutineChangeRequest, RoutineChangeResponse, SessionResponse, SignInRequest,
 } from '@api';
@@ -47,6 +48,10 @@ export async function checkSignedIn() {
 
 export function sendMessage(request: MessageRequest) {
   return post<MessageResponse>('/api/messages', request);
+}
+
+export function createBot(request: CreateBotRequest) {
+  return post<CreateBotResponse>('/api/bots', request);
 }
 
 export function decideAction(request: ActionDecisionRequest) {

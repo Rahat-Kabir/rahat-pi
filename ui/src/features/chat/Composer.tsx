@@ -3,7 +3,7 @@ import { Button } from '../../components/Button';
 import { describeError, sendMessage } from '../../api/client';
 import { nextPendingMessage, type PendingMessage, type WhenBusy } from './pendingMessage';
 
-export function Composer({ agentBusy }: { agentBusy: boolean }) {
+export function Composer({ agentBusy, botId }: { agentBusy: boolean; botId?: string }) {
   const [draft, setDraft] = useState('');
   const [whenBusy, setWhenBusy] = useState<WhenBusy>('followUp');
   const [sending, setSending] = useState(false);
@@ -19,7 +19,7 @@ export function Composer({ agentBusy }: { agentBusy: boolean }) {
     }
     setSending(true);
     setFeedback(null);
-    pendingMessage.current = nextPendingMessage(pendingMessage.current, message, whenBusy, () => crypto.randomUUID());
+    pendingMessage.current = nextPendingMessage(pendingMessage.current, message, whenBusy, botId, () => crypto.randomUUID());
     try {
       await sendMessage(pendingMessage.current);
       pendingMessage.current = undefined;

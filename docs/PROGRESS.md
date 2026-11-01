@@ -12,6 +12,10 @@ What changed, step by step, newest first. Each entry says what was built and how
 - [ ] Activity: tool calls, subagents, costs
 - [ ] Make the app the default UI and remove the old page
 
+### Bots: every bot gets its own conversation (2026-11-01)
+A bot is a record in a new `rahat.bots` registry plus its own ownerless Pi conversation; the existing root is adopted once as the default bot (Rahat-PI) and cannot be deleted. Creating a bot is one commit (conversation + same agent + record); every bot is reconfigured with the root's current agent on reopen; deleting tombstones after aborting, history stays, and a deleted id is refused everywhere, including a web view cached before deletion. Chat, watchdog, stop, health, and cost-session accounting cover every bot; the app gets a bot switcher, per-bot `?bot=` state/events, `botId` on messages, and `POST /api/bots`; CLI gains `bots`, `bot create`, `bot delete`. All bots share persona, model, tools, and memory in this slice.
+Verified: 6 registry/reopen/chat/delete/watchdog tests, per-bot web routes (bot-scoped transcripts, 409 unknown and deleted ids), health labels, contract and app tests + build, full offline suite, and a SIGKILL inside a bot's sandboxed shell that resumes once and reports (never reruns) the interrupted command. Not yet: per-bot personas/models/routines/memory, live model check.
+
 ### Notifications, app side (2026-10-29)
 A header button turns notifications on or off per device. A service worker (`/app/sw.js`) wakes on the empty ping, asks the brain for the text, shows each record, and acknowledges it. If the brain can't be asked, it shows a fixed "Something new is waiting".
 Verified: 5 app tests (show and acknowledge in order, repeat ping shows nothing, fallback on 401/409/offline/no subscription, key decoding, labels), app build. Headless Chrome against an offline service: on → real subscription saved; simulated local push → worker reached the brain with the cookie; unknown device → fallback shown; off → unsubscribed. Not yet: a live push through a push service.

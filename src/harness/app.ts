@@ -4,13 +4,14 @@ import { processLock } from '@earendil-works/chord/node';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import {
   Harness, createRegistry, defineExtension, section, watchEvents, LiveDoc, CompactionTask, hook,
-  type AgentEvent, type Conversation, type TaskId, type Storage,
+  type AgentEvent, type Conversation, type ConversationId, type ModelRef, type TaskId, type Storage, type ToolRegistration,
 } from '@earendil-works/pi-durable';
 import { openPiStorage } from './storage.js';
 import { omitUnansweredTurns } from './conversation-context.js';
 import { initializeCosts } from './costs.js';
 import { readStats } from './stats.js';
 import { AppDoc, type RoutineRun } from './state.js';
+import { BotsDoc, createBotRecord, defaultBotId, ensureDefaultBot, reconfigureBots, type Bot } from './bots.js';
 import { buildModels, capModelOutput, budgetCompactionModels } from './models.js';
 import { type Config, crashAt } from '../config.js';
 import { MemoryIndex } from '../extensions/memory.js';
@@ -39,9 +40,11 @@ import { approveAction, editAction } from '../executor/actions.js';
 
 export type Command =
   | { name: 'chat'; message: string; requestId?: string }
-  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' | 'health' | 'backup' | 'routines' | 'testNotification' }
+  | { name: 'actions' | 'state' | 'tick' | 'outbox' | 'reconcile' | 'subagents' | 'compact' | 'stats' | 'memories' | 'health' | 'backup' | 'routines' | 'bots' | 'testNotification' }
   | { name: 'retry'; taskId: number }
   | { name: 'forget'; id: string }
+  | { name: 'createBot'; botName: string }
+  | { name: 'deleteBot'; id: string }
   | { name: 'pauseRoutine' | 'resumeRoutine' | 'deleteRoutine'; id: string }
   | { name: 'approve' | 'reject'; id: string; payloadHash?: string }
   | { name: 'edit'; id: string; recipient: string; body: string };
@@ -79,6 +82,7 @@ export class App {
     private releaseLock: () => Promise<void>,
     private memoryIndex: MemoryIndex,
     private storage: Storage,
+    private agentOptions: { model: ModelRef; tools: ToolRegistration[] },
     sendPush: PushSender,
   ) {
     this.sender = new FakeSender(join(config.dataDir, 'fake-provider.sqlite'));
@@ -170,8 +174,11 @@ export class App {
       const root = await harness.root(context, { agent: { model: modelRef, tools } });
       // Config is authoritative on reopen, too (root options only apply at first creation).
       await root.configure({ model: modelRef, tools }, context);
+      await harness.commit(transaction => ensureDefaultBot(transaction, root.id, config.now()), context);
+      // The root's authority extends to every bot, so bots created earlier follow a model or tool change.
+      await reconfigureBots(harness, { model: modelRef, tools }, root.id);
       await initializeCosts(harness);
-      const app = new App(config, harness, root, releaseLock, memoryIndex, storage, sendPush);
+      const app = new App(config, harness, root, releaseLock, memoryIndex, storage, { model: modelRef, tools }, sendPush);
       await app.executor.recover();
       app.startWatchdog();
       return app;
@@ -207,18 +214,20 @@ export class App {
       return;
     }
     const state = await this.harness.snapshot(AppDoc, context);
-    const liveConversation = await this.harness.snapshot(LiveDoc, this.root.id, context);
-    const submissionId = liveConversation?.run?.inputs[0];
-    const runBudget = submissionId === undefined ? undefined : state?.budgets[submissionId];
-    if (this.stopRequested) {
-      await this.root.abort(context, { background: true });
-    } else if (runBudget && runDeadlineReached(this.config, runBudget)) {
-      await this.root.abort(context);
-    }
-    for (const compaction of liveConversation?.compactions ?? []) {
-      const compactionBudget = state?.budgets[`compaction:${compaction.taskId}`];
-      if (compactionBudget && runDeadlineReached(this.config, compactionBudget)) {
-        await this.harness.abortTask(compaction.taskId, context);
+    for (const conversation of await this.botConversations()) {
+      const liveConversation = await this.harness.snapshot(LiveDoc, conversation.id, context);
+      const submissionId = liveConversation?.run?.inputs[0];
+      const runBudget = submissionId === undefined ? undefined : state?.budgets[submissionId];
+      if (this.stopRequested) {
+        await conversation.abort(context, { background: true });
+      } else if (runBudget && runDeadlineReached(this.config, runBudget)) {
+        await conversation.abort(context);
+      }
+      for (const compaction of liveConversation?.compactions ?? []) {
+        const compactionBudget = state?.budgets[`compaction:${compaction.taskId}`];
+        if (compactionBudget && runDeadlineReached(this.config, compactionBudget)) {
+          await this.harness.abortTask(compaction.taskId, context);
+        }
       }
     }
     const subagents = await this.harness.snapshot(SubagentsDoc, context);
@@ -277,6 +286,12 @@ export class App {
         return this.forgetMemory(command.id);
       case 'routines':
         return this.listRoutines();
+      case 'bots':
+        return this.listBots();
+      case 'createBot':
+        return this.createBot(command.botName);
+      case 'deleteBot':
+        return this.deleteBot(command.id);
       case 'pauseRoutine':
         return this.disableRoutine(command.id, 'paused');
       case 'deleteRoutine':
@@ -428,14 +443,26 @@ export class App {
       return { shownSeq: subscription.shownSeq };
     }, context);
   }
+  // Stopped tasks can sit in any bot's conversation, so every bot's live view is read once.
   async stoppedTasks() {
-    const view = await this.root.viewState(context);
-    try {
-      const liveTools = (view.value.docs['pi.live'] as { tools?: { callId: string; name: string }[] } | undefined)?.tools ?? [];
-      return await readStoppedTasks(this.harness, this.root.id, liveTools);
-    } finally {
-      view.dispose();
+    const bots = await this.listBots();
+    const liveToolsByConversation = new Map<number, { callId: string; name: string }[]>();
+    for (const bot of bots) {
+      const conversation = await this.harness.conversation(bot.conversationId as ConversationId, context);
+      if (!conversation) {
+        continue;
+      }
+      const view = await conversation.viewState(context);
+      try {
+        liveToolsByConversation.set(
+          bot.conversationId,
+          (view.value.docs['pi.live'] as { tools?: { callId: string; name: string }[] } | undefined)?.tools ?? [],
+        );
+      } finally {
+        view.dispose();
+      }
     }
+    return await readStoppedTasks(this.harness, bots, liveToolsByConversation);
   }
   // Pi's retryTask quietly ignores a task that is not parked, so the owner gets an explicit answer instead.
   private async retryStoppedTask(taskId: number) {
@@ -523,6 +550,73 @@ export class App {
     crashAt('routine_resumed');
     return result;
   }
+  // The default bot comes first, then the others by creation time.
+  async listBots(): Promise<Bot[]> {
+    const bots = Object.values((await this.harness.snapshot(BotsDoc, context))?.bots ?? {}).filter(bot => !bot.deleted);
+    return bots.sort((first, second) => {
+      if (first.id === defaultBotId || second.id === defaultBotId) {
+        return first.id === defaultBotId ? -1 : 1;
+      }
+      return first.createdAt - second.createdAt;
+    });
+  }
+  private async createBot(botName: string): Promise<Bot> {
+    const name = botName.trim();
+    if (!name || name.length > 40) {
+      throw new Error('Bot name must be 1 to 40 characters');
+    }
+    return this.harness.commit(transaction => createBotRecord(transaction, name, this.config.now(), this.agentOptions), context);
+  }
+  // Deleting keeps the conversation history in storage for audit, the way routine deletion does.
+  private async deleteBot(id: string) {
+    if (id === defaultBotId) {
+      throw new Error('The default bot cannot be deleted');
+    }
+    const bot = (await this.harness.snapshot(BotsDoc, context))?.bots[id];
+    if (!bot || bot.deleted) {
+      throw new Error('Bot not found');
+    }
+    // Abort first: if the process dies in between, the bot is still listed and the owner can delete again.
+    const conversation = await this.harness.conversation(bot.conversationId as ConversationId, context);
+    if (conversation) {
+      await conversation.abort(context, { background: true });
+    }
+    return this.harness.commit(async transaction => {
+      const bots = (await transaction.doc(BotsDoc)).bots;
+      if (!bots[id] || bots[id].deleted) {
+        throw new Error('Bot not found');
+      }
+      bots[id].deleted = true;
+      return { id, status: 'deleted' as const };
+    }, context);
+  }
+  // The conversation a chat belongs to: a bot's own, or the root when no bot is named.
+  async conversationForBot(botId?: string): Promise<Conversation> {
+    if (botId === undefined) {
+      return this.root;
+    }
+    const bot = (await this.harness.snapshot(BotsDoc, context))?.bots[botId];
+    if (!bot || bot.deleted) {
+      throw new Error('Bot not found');
+    }
+    const conversation = await this.harness.conversation(bot.conversationId as ConversationId, context);
+    if (!conversation) {
+      throw new Error('Bot conversation is missing');
+    }
+    return conversation;
+  }
+  // Every live bot conversation, the default bot's (the root) first.
+  private async botConversations(): Promise<Conversation[]> {
+    const conversations = [];
+    for (const bot of await this.listBots()) {
+      const conversation = await this.harness.conversation(bot.conversationId as ConversationId, context);
+      if (conversation) {
+        conversations.push(conversation);
+      }
+    }
+    return conversations;
+  }
+
   async listSubagents() {
     const subagents = await this.harness.snapshot(SubagentsDoc, context);
     return await Promise.all(Object.values(subagents?.runs ?? {}).map(async subagentRun => {
@@ -535,13 +629,14 @@ export class App {
     }));
   }
 
-  async submitMessage(message: string, whenBusy: 'steer' | 'followUp', requestId?: string) {
+  async submitMessage(message: string, whenBusy: 'steer' | 'followUp', requestId?: string, botId?: string) {
     if (this.closed || this.stopRequested) {
       throw new Error('Agent stopped; run the service to clear the stop flag');
     }
     this.assertModelKeyConfigured();
     // Admission must not wait behind a chat completion: Pi owns the busy inbox.
-    const submission = await this.root.submit({ type: 'input', content: message, whenBusy, requestId }, context);
+    const conversation = await this.conversationForBot(botId);
+    const submission = await conversation.submit({ type: 'input', content: message, whenBusy, requestId }, context);
     return { submissionId: submission.id };
   }
 
@@ -679,7 +774,10 @@ export class App {
     if (this.closed) {
       return;
     }
-    await this.root.abort(context, { background: true });
+    // Stop is a kill switch for the whole agent, so every bot's work is cancelled.
+    for (const conversation of await this.botConversations()) {
+      await conversation.abort(context, { background: true });
+    }
     await this.close();
   }
   async close() {

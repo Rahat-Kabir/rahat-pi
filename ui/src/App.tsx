@@ -10,6 +10,7 @@ import { ApprovalsBanner } from './features/approvals/ApprovalsBanner';
 import { StoppedTasksBanner } from './features/health/StoppedTasksBanner';
 import { ApprovalsPanel } from './features/approvals/ApprovalsPanel';
 import { waitingCount } from './features/approvals/approvals';
+import { BotSwitcher } from './features/bots/BotSwitcher';
 
 type SignInStatus = 'checking' | 'signedOut' | 'signedIn';
 type View = 'chat' | 'memories' | 'routines';
@@ -50,7 +51,15 @@ export function App() {
   }, [signInStatus, checkAttempt]);
   // A refused live stream usually means the sign-in is no longer valid, so check again.
   const recheckSignIn = useCallback(() => setSignInStatus('checking'), []);
-  const { state, connected } = useLiveState(signInStatus === 'signedIn', recheckSignIn);
+  // Undefined selects the default bot; the stream follows the selected bot's conversation.
+  const [selectedBotId, setSelectedBotId] = useState<string | undefined>(undefined);
+  const { state, connected } = useLiveState(signInStatus === 'signedIn', recheckSignIn, selectedBotId);
+  // A deleted bot disappears from the list; fall back to the default bot.
+  useEffect(() => {
+    if (state && selectedBotId !== undefined && !state.bots.some(bot => bot.id === selectedBotId)) {
+      setSelectedBotId(undefined);
+    }
+  }, [state, selectedBotId]);
   const [view, setView] = useState<View>('chat');
   const approvals = useRef<HTMLDivElement>(null);
   const waiting = state ? waitingCount(state.actions) : 0;
@@ -67,6 +76,11 @@ export function App() {
       {signInStatus === 'signedIn' && (state ? (
         <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_24rem] lg:overflow-hidden">
           <div className="flex min-h-[70vh] flex-col gap-3 lg:min-h-0 [&>section]:flex-1">
+            <BotSwitcher
+              bots={state.bots}
+              selectedId={selectedBotId ?? state.bots[0]?.id}
+              onSelect={setSelectedBotId}
+            />
             <nav className="flex gap-1" aria-label="Views">
               {views.map(tab => (
                 <button
@@ -82,7 +96,7 @@ export function App() {
                 </button>
               ))}
             </nav>
-            {view === 'chat' && <ChatView state={state} />}
+            {view === 'chat' && <ChatView state={state} botId={selectedBotId} />}
             {view === 'memories' && <MemoriesView memories={state.memories} />}
             {view === 'routines' && <RoutinesView routines={state.routines} />}
           </div>

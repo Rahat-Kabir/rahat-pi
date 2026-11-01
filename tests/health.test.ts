@@ -22,12 +22,14 @@ describe('stopped task health', () => {
     try {
       const record = await routineTaskRecord(app);
       const routines = (await app.harness.snapshot(AppDoc, context))!.routines;
+      const bots = await app.listBots();
+      const botByConversation = new Map(bots.map(bot => [bot.conversationId, bot]));
       const describe = (changes: object, liveTools: { callId: string; name: string }[] = []) =>
-        describeTask(blocked({ ...record, ...changes } as TaskInspection['record'], 'restart_limit'), routines, liveTools, app.root.id);
+        describeTask(blocked({ ...record, ...changes } as TaskInspection['record'], 'restart_limit'), routines, liveTools, botByConversation);
       expect(describe({})).toBe('Routine "Daily briefing"');
       expect(describe({ input: { routineId: 'deleted' } })).toBe('Routine');
       expect(describe({ kind: 'pi.generation', conversationId: app.root.id })).toBe('Chat answer');
-      expect(describe({ kind: 'pi.generation', conversationId: 'child-conversation' })).toBe('Helper answer');
+      expect(describe({ kind: 'pi.generation', conversationId: 999999 })).toBe('Helper answer');
       expect(describe({ kind: 'pi.compaction' })).toBe('Chat summary');
       expect(describe({ kind: 'pi.tool', input: { kind: 'model', callId: 'call-1' } }, [{ callId: 'call-1', name: 'web_fetch' }])).toBe('Tool call (web_fetch)');
       expect(describe({ kind: 'pi.tool', input: { kind: 'model', callId: 'gone' } })).toBe('Tool call');

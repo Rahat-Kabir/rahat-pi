@@ -74,6 +74,9 @@ export type Routine = {
   lastRun: RoutineRun | null;
 };
 
+// A bot the owner can chat with; the default bot comes first. Treat the name as untrusted text.
+export type Bot = { id: string; name: string; createdAt: number };
+
 // A task Pi will not run: parked after repeated crashes (`canRetry`), or blocked on
 // missing or unmigratable code. `label` is plain words, for example 'Routine "Daily briefing"'.
 export type StoppedTask = {
@@ -112,6 +115,7 @@ export type WebState = {
   subagents: Subagent[];
   memories: Memory[];
   routines: Routine[];
+  bots: Bot[];
   stoppedTasks: StoppedTask[];
   stats: Stats;
 };
@@ -127,8 +131,14 @@ export type MessageRequest = {
   whenBusy?: 'steer' | 'followUp';
   // Reuse the same ID when retrying an uncertain submission, so it is admitted once.
   requestId?: string;
+  // The bot to talk to; the default bot when absent.
+  botId?: string;
 };
 export type MessageResponse = { submissionId: number };
+
+// POST /api/bots → 200 CreateBotResponse; the bot list arrives with the next state frame.
+export type CreateBotRequest = { name: string };
+export type CreateBotResponse = { id: string; name: string };
 
 // POST /api/actions → 200 with the updated action; 409 when the payload changed.
 export type ActionDecisionRequest = {

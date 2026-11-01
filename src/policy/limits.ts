@@ -8,6 +8,7 @@ import type { Config } from '../config.js';
 import { CostsDoc, recordRequestUsage, finishRequest, countedSpend } from '../harness/costs.js';
 import { localDay } from '../timezone.js';
 import { AppDoc, type RunBudget } from '../harness/state.js';
+import { BotsDoc } from '../harness/bots.js';
 import { SubagentsDoc, childDeadlineReached } from '../extensions/subagents.js';
 import { assertAllowedTool } from './index.js';
 
@@ -32,7 +33,14 @@ export async function reserveModelRequest(
   }
   const root = await harness.root(context);
   const subagents = await harness.snapshot(SubagentsDoc, context);
-  const candidates = [root.id, ...Object.values(subagents?.runs ?? {}).map(subagentRun => subagentRun.conversationId as ConversationId)];
+  const bots = await harness.snapshot(BotsDoc, context);
+  // Every conversation that may run a model: each bot's own (the default bot's is the
+  // root) plus subagent children. An unknown session still fails closed below.
+  const candidates = [
+    root.id,
+    ...Object.values(bots?.bots ?? {}).filter(bot => !bot.deleted).map(bot => bot.conversationId as ConversationId),
+    ...Object.values(subagents?.runs ?? {}).map(subagentRun => subagentRun.conversationId as ConversationId),
+  ];
   let conversationId: ConversationId | undefined;
   for (const candidateId of candidates) {
     const provider = await harness.snapshot(ProviderDoc, candidateId, context);

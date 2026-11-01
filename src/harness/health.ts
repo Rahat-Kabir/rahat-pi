@@ -1,6 +1,7 @@
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import type { ConversationId, Harness, TaskInspection } from '@earendil-works/pi-durable';
+import type { Harness, TaskInspection } from '@earendil-works/pi-durable';
 import { AppDoc, type Routine } from './state.js';
+import { defaultBotId, type Bot } from './bots.js';
 
 export type BlockedReason = Extract<TaskInspection['state'], { kind: 'blocked' }>['reason'];
 // A task Pi will not run: parked after repeated crashes, or missing its code.
@@ -21,13 +22,19 @@ export function describeTask(
   inspection: TaskInspection,
   routines: Record<string, Routine>,
   liveTools: LiveTool[],
-  rootConversationId: ConversationId,
+  botByConversation: Map<number, Bot>,
 ) {
   const { kind, input, conversationId } = inspection.record;
   const taskInput = (input ?? {}) as { callId?: string; call?: { name?: string }; routineId?: string };
   switch (kind) {
-    case 'pi.generation':
-      return conversationId === rootConversationId ? 'Chat answer' : 'Helper answer';
+    case 'pi.generation': {
+      const bot = botByConversation.get(conversationId);
+      // A conversation no bot owns is a subagent's child.
+      if (!bot) {
+        return 'Helper answer';
+      }
+      return bot.id === defaultBotId ? 'Chat answer' : `Chat answer (${bot.name})`;
+    }
     case 'pi.compaction':
       return 'Chat summary';
     case 'pi.tool': {
@@ -44,14 +51,19 @@ export function describeTask(
   }
 }
 
-export async function readStoppedTasks(harness: Harness, rootConversationId: ConversationId, liveTools: LiveTool[]): Promise<StoppedTask[]> {
+export async function readStoppedTasks(
+  harness: Harness,
+  bots: Bot[],
+  liveToolsByConversation: Map<number, LiveTool[]>,
+): Promise<StoppedTask[]> {
   const inspection = await harness.inspect(context);
   const routines = (await harness.snapshot(AppDoc, context))?.routines ?? {};
+  const botByConversation = new Map<number, Bot>(bots.map(bot => [bot.conversationId, bot]));
   return inspection.tasks.flatMap(task => task.state.kind === 'blocked'
     ? [{
       taskId: Number(task.record.id),
       kind: task.record.kind,
-      label: describeTask(task, routines, liveTools, rootConversationId),
+      label: describeTask(task, routines, liveToolsByConversation.get(task.record.conversationId) ?? [], botByConversation),
       reason: task.state.reason,
       restarts: task.record.restarts ?? 0,
       canRetry: task.state.reason === 'restart_limit',

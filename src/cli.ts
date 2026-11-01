@@ -91,6 +91,17 @@ program.command('retry <taskId>').description('Run a task parked after repeated 
 program.command('routines').description('List routines with their next and latest run').action(async () => {
   console.log(JSON.stringify(await invoke({ name: 'routines' }), null, 2));
 });
+program.command('bots').description('List bots; each has its own conversation').action(async () => {
+  console.log(JSON.stringify(await invoke({ name: 'bots' }), null, 2));
+});
+// Grouped under `bot` so a bare `create <name>` is never mistaken for creating something else.
+const botCommand = program.command('bot').description('Create or delete a bot');
+botCommand.command('create <name>').description('Create a bot with its own conversation').action(async botName => {
+  console.log(JSON.stringify(await invoke({ name: 'createBot', botName }), null, 2));
+});
+botCommand.command('delete <id>').description('Delete a bot; its conversation history stays stored').action(async botId => {
+  console.log(JSON.stringify(await invoke({ name: 'deleteBot', id: botId }), null, 2));
+});
 // Grouped under `routine` so a bare `delete <id>` is never mistaken for deleting something else.
 const routineCommand = program.command('routine').description('Pause, resume, or delete a routine');
 const routineChanges = { pause: 'pauseRoutine', resume: 'resumeRoutine', delete: 'deleteRoutine' } as const;

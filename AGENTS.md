@@ -50,6 +50,11 @@ Safe crash recovery and trustworthy approvals are the main constraint.
 - Policy boundary in code decides tool access; write tools only create
   Action proposals. The executor runs an approved payload once.
 - Action lifecycle: proposed → approved → executing → succeeded | failed | unknown.
+- A bot is a record in `rahat.bots` plus its own ownerless conversation, never a
+  process. The root is adopted once as the default bot (`main`) and cannot be
+  deleted; deleting another bot aborts its conversation and keeps history. Bots
+  share persona, model, tools, memory, workspace, and USD caps; only the
+  conversation is per-bot.
 
 ### Key Decisions
 
@@ -105,7 +110,7 @@ npm test               # vitest, offline (all files)
 npm run test:crash     # SIGKILL restart tests only
 npm run test:linux     # Windows: full Linux suite in WSL on the current files
 npx tsc --noEmit
-npm run cli -- chat    # terminal chat; also: run, web, stop, actions, approve <id>, memories, forget <id>, routines, routine pause|resume|delete <id>, health, retry <taskId>, backup, notify-test, stats
+npm run cli -- chat    # terminal chat; also: run, web, stop, actions, approve <id>, memories, forget <id>, routines, routine pause|resume|delete <id>, bots, bot create <name>, bot delete <id>, health, retry <taskId>, backup, notify-test, stats
 npm run demo           # free offline walkthrough (memory, approvals, send-once)
 npm run eval           # 15 offline evals with a JSON report
 npm run web:snapshot   # save static web UI HTML to data/web-snapshot.html

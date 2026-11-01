@@ -12,6 +12,7 @@ function stateWith(partial: Partial<WebState>): WebState {
     subagents: [],
     memories: [],
     routines: [],
+    bots: [],
     stoppedTasks: [],
     stats: {} as WebState['stats'],
     ...partial,
@@ -70,13 +71,14 @@ describe('chat messages', () => {
 });
 
 describe('pending message', () => {
-  const ids = ['request-1', 'request-2'];
+  const ids = ['request-1', 'request-2', 'request-3'];
   const createRequestId = () => ids.shift()!;
 
-  it('reuses the request ID when retrying the same message, and makes a new one otherwise', () => {
-    const first = nextPendingMessage(undefined, 'hello', 'followUp', createRequestId);
+  it('reuses the request ID when retrying the same message to the same bot, and makes a new one otherwise', () => {
+    const first = nextPendingMessage(undefined, 'hello', 'followUp', undefined, createRequestId);
     expect(first.requestId).toBe('request-1');
-    expect(nextPendingMessage(first, 'hello', 'followUp', createRequestId)).toBe(first);
-    expect(nextPendingMessage(first, 'hello', 'steer', createRequestId).requestId).toBe('request-2');
+    expect(nextPendingMessage(first, 'hello', 'followUp', undefined, createRequestId)).toBe(first);
+    expect(nextPendingMessage(first, 'hello', 'steer', undefined, createRequestId).requestId).toBe('request-2');
+    expect(nextPendingMessage(first, 'hello', 'followUp', 'other-bot', createRequestId).requestId).toBe('request-3');
   });
 });

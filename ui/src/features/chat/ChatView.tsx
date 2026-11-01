@@ -6,7 +6,7 @@ import { MessageBubble } from './MessageBubble';
 import { liveAnswer, queuedText, runFailure, transcript } from './messages';
 import { describeRunningTool } from './toolCalls';
 
-export function ChatView({ state }: { state: WebState }) {
+export function ChatView({ state, botId }: { state: WebState; botId?: string }) {
   const messages = transcript(state);
   const answer = liveAnswer(state);
   const failure = runFailure(state);
@@ -49,7 +49,7 @@ export function ChatView({ state }: { state: WebState }) {
         ))}
         {failure && <p role="alert" className="rounded-lg bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{failure}</p>}
       </div>
-      <Composer agentBusy={agentBusy} />
+      <Composer agentBusy={agentBusy} botId={botId} />
     </Panel>
   );
 }

@@ -3,8 +3,10 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
+import type { Conversation } from '@earendil-works/pi-durable';
 import { App } from '../harness/app.js';
 import { AppDoc } from '../harness/state.js';
+import { BotsDoc } from '../harness/bots.js';
 import { readWebState } from './state.js';
 import { renderPage, renderState } from './page.js';
 import { appIsBuilt, defaultAppDirectory, findAppFile, isAppPath } from './app-files.js';
@@ -113,35 +115,82 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
   const isSignedIn = (incomingRequest: IncomingMessage) =>
     matchesToken(incomingRequest.headers['x-rahat-token']) || matchesToken(readCookie(incomingRequest, sessionCookieName));
   const clientScript = readFileSync(new URL('./client.js', import.meta.url));
-  const conversationView = await app.root.viewState(context);
   const actionsWatch = await app.harness.watchDoc(AppDoc, context);
-  const clients = new Set<ServerResponse>();
+  // One conversation view per bot, attached when a client first selects it; the default
+  // bot's view also serves the old page. Frames carry that bot's transcript only.
+  type BotViewGroup = { view: Awaited<ReturnType<Conversation['viewState']>>; clients: Set<ServerResponse> };
+  const botViews = new Map<string, BotViewGroup>();
+  // In-flight creations, so two clients first selecting the same bot share one view
+  // instead of orphaning one client set outside the map.
+  const pendingViews = new Map<string, Promise<BotViewGroup>>();
+  const disposeBotViews = async () => {
+    const groups = await Promise.all(
+      [...botViews.values(), ...pendingViews.values()].map(groupOrPromise => Promise.resolve(groupOrPromise).catch(() => undefined)),
+    );
+    for (const group of groups) {
+      group?.view.dispose();
+    }
+    botViews.clear();
+    pendingViews.clear();
+  };
+  const botViewGroup = async (botId?: string): Promise<BotViewGroup> => {
+    // The registry check runs on every call, so a bot deleted after its view was
+    // cached is refused like an unknown one.
+    const conversation = await app.conversationForBot(botId);
+    const key = botId ?? 'default';
+    const existing = botViews.get(key) ?? pendingViews.get(key);
+    if (existing) {
+      return existing;
+    }
+    const creating = (async () => {
+      const view = await conversation.viewState(context);
+      view.subscribe(refresh);
+      return { view, clients: new Set<ServerResponse>() };
+    })();
+    pendingViews.set(key, creating);
+    try {
+      const group = await creating;
+      botViews.set(key, group);
+      return group;
+    } finally {
+      pendingViews.delete(key);
+    }
+  };
   let refreshWork: Promise<void> = Promise.resolve();
   let closed = false;
   const refresh = () => {
     refreshWork = refreshWork.then(async () => {
-      if (closed || clients.size === 0) {
+      if (closed) {
         return;
       }
-      const state = await readWebState(app, conversationView.value);
-      const frame = `event: state\ndata: ${JSON.stringify({ ...state, html: renderState(state) })}\n\n`;
-      for (const response of clients) {
-        if (response.writableLength > 1024 * 1024) {
-          // Slow clients reconnect to a fresh durable snapshot instead of buffering history.
-          response.destroy();
-        } else {
-          response.write(frame);
+      for (const group of botViews.values()) {
+        if (group.clients.size === 0) {
+          continue;
+        }
+        const state = await readWebState(app, group.view.value);
+        const frame = `event: state\ndata: ${JSON.stringify({ ...state, html: renderState(state) })}\n\n`;
+        for (const response of group.clients) {
+          if (response.writableLength > 1024 * 1024) {
+            // Slow clients reconnect to a fresh durable snapshot instead of buffering history.
+            response.destroy();
+          } else {
+            response.write(frame);
+          }
         }
       }
     }).catch(error => {
       console.error(`Web state update failed: ${error.message}`);
-      for (const response of clients) {
-        response.destroy();
+      for (const group of botViews.values()) {
+        for (const response of group.clients) {
+          response.destroy();
+        }
       }
     });
     return refreshWork;
   };
-  const unsubscribe = conversationView.subscribe(refresh);
+  // Bot creation and deletion change the switcher every client shows.
+  const botsWatch = await app.harness.watchDoc(BotsDoc, context);
+  botsWatch?.start(refresh);
   actionsWatch?.start(refresh);
   let actualPort = port;
   async function handleRequest(incomingRequest: IncomingMessage, response: ServerResponse) {
@@ -154,6 +203,9 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
       throw new HttpError(403, 'Host is not allowed');
     }
     const path = incomingRequest.url;
+    const requestUrl = new URL(path ?? '/', 'http://localhost');
+    // `?bot=` selects the conversation a read serves; absent means the default bot.
+    const botId = requestUrl.searchParams.get('bot') ?? undefined;
     // Signing in, the old page's script, and the app's files carry no owner data, so they are public.
     if (incomingRequest.method === 'POST' && path === '/api/session') {
       const body = await readBody(incomingRequest);
@@ -172,12 +224,11 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
         response.end(clientScript);
         return;
       }
-      const pathname = new URL(path ?? '/', 'http://localhost').pathname;
-      if (isAppPath(pathname)) {
+      if (isAppPath(requestUrl.pathname)) {
         if (!appIsBuilt(appDirectory)) {
           throw new HttpError(404, 'App not built; run npm run ui:build');
         }
-        const appFile = findAppFile(appDirectory, pathname === '/app' ? '/app/' : pathname);
+        const appFile = findAppFile(appDirectory, requestUrl.pathname === '/app' ? '/app/' : requestUrl.pathname);
         if (!appFile) {
           throw new HttpError(404, 'Not found');
         }
@@ -203,17 +254,18 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
         sendJson(response, 200, { publicKey: app.notifier.keys.publicKey });
         return;
       }
-      if (path === '/api/events') {
+      if (requestUrl.pathname === '/api/events') {
+        const group = await botViewGroup(botId);
         response.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', Connection: 'keep-alive' });
         response.write('retry: 1000\n\n');
-        clients.add(response);
-        response.once('close', () => clients.delete(response));
+        group.clients.add(response);
+        response.once('close', () => group.clients.delete(response));
         await refresh();
         return;
       }
-      if (path === '/' || path === '/api/state') {
-        const state = await readWebState(app, conversationView.value);
-        if (path === '/api/state') {
+      if (requestUrl.pathname === '/' || requestUrl.pathname === '/api/state') {
+        const state = await readWebState(app, (await botViewGroup(botId)).view.value);
+        if (requestUrl.pathname === '/api/state') {
           sendJson(response, 200, state);
         } else {
           response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -234,8 +286,15 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
         throw new HttpError(400, 'Invalid whenBusy');
       }
       const requestId = body.requestId === undefined ? undefined : requireString(body, 'requestId', 200);
-      const result = await app.submitMessage(message, whenBusy, requestId);
+      const botId = body.botId === undefined ? undefined : requireString(body, 'botId', 200);
+      const result = await app.submitMessage(message, whenBusy, requestId, botId);
       sendJson(response, 202, result);
+      return;
+    }
+    if (path === '/api/bots') {
+      const name = requireString(body, 'name', 40);
+      const bot = await app.dispatch({ name: 'createBot', botName: name }) as { id: string; name: string };
+      sendJson(response, 200, { id: bot.id, name: bot.name });
       return;
     }
     if (path === '/api/actions') {
@@ -311,9 +370,9 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
       server.listen(port, '127.0.0.1', resolve);
     });
   } catch (error) {
-    unsubscribe();
-    conversationView.dispose();
+    await disposeBotViews();
     await actionsWatch?.stop();
+    await botsWatch?.stop();
     throw error;
   }
   const address = server.address();
@@ -322,9 +381,11 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
   }
   actualPort = address.port;
   const heartbeat = setInterval(() => {
-    for (const response of clients) {
-      if (!response.write(': heartbeat\n\n')) {
-        response.destroy();
+    for (const group of botViews.values()) {
+      for (const response of group.clients) {
+        if (!response.write(': heartbeat\n\n')) {
+          response.destroy();
+        }
       }
     }
   }, 15000);
@@ -336,9 +397,9 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
       }
       closed = true;
       clearInterval(heartbeat);
-      unsubscribe();
-      conversationView.dispose();
+      await disposeBotViews();
       await actionsWatch?.stop();
+      await botsWatch?.stop();
       await refreshWork;
       const closing = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
       server.closeAllConnections();
