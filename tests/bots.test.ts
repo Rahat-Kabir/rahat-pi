@@ -129,6 +129,22 @@ describe('bot registry', () => {
     }
   });
 
+  it('refuses a second live bot with the same name but frees the name after deletion', async () => {
+    const temporaryStorage = temporaryData();
+    const app = await App.open(offlineConfig(temporaryStorage.dataDir));
+    try {
+      const bot = await app.dispatch({ name: 'createBot', botName: 'Coder' }) as { id: string };
+      // Names are trimmed, so " Coder " is the same name, not a loophole.
+      await expect(app.dispatch({ name: 'createBot', botName: ' Coder ' })).rejects.toThrow('Bot name already in use');
+      await app.dispatch({ name: 'deleteBot', id: bot.id });
+      const replacement = await app.dispatch({ name: 'createBot', botName: 'Coder' }) as { id: string };
+      expect(replacement.id).not.toBe(bot.id);
+    } finally {
+      await app.close();
+      temporaryStorage.cleanup();
+    }
+  });
+
   it('aborts a busy bot conversation when the run deadline passes', async () => {
     const temporaryStorage = temporaryData();
     // A run deadline of 1 ms passes while the run is still open, so the watchdog aborts it.

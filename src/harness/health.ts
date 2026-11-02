@@ -44,7 +44,10 @@ export function describeTask(
     }
     case 'rahat.daily-briefing': {
       const routineName = taskInput.routineId === undefined ? undefined : routines[taskInput.routineId]?.name;
-      return routineName ? `Routine "${routineName}"` : 'Routine';
+      const bot = botByConversation.get(conversationId);
+      // The briefing task lives in its bot's conversation; name bots other than the default.
+      const botSuffix = bot && bot.id !== defaultBotId ? ` (${bot.name})` : '';
+      return routineName ? `Routine "${routineName}"${botSuffix}` : 'Routine';
     }
     default:
       return kind;

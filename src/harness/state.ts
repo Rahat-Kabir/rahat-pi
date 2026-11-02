@@ -26,6 +26,8 @@ export type Action = {
 };
 export type Routine = {
   id: string;
+  // The bot whose conversation this routine reports into; absent means the default bot.
+  botId?: string;
   name: string;
   prompt: string;
   time: string;
@@ -35,6 +37,8 @@ export type Routine = {
   deleted: boolean;
   missedRunPolicy: 'skip' | 'catchUpOnce';
   taskId: number;
+  // The previous run's report (capped), or null after a "Nothing new" run.
+  lastReport?: string | null;
 };
 export type RoutineRun = {
   id: string;

@@ -5,7 +5,9 @@ import { existsSync } from 'node:fs';
 import { cli, temporaryData, toolMessage, jsonOutput } from './helpers.js';
 import type { Action } from '../src/harness/state.js';
 
-it('service owns Pi storage, accepts CLI chat/approvals, executes once, and stops background tasks', async () => {
+// Spawns a service plus a dozen CLI processes; 30 s is not enough on a busy machine
+// (the always-on service may be running during development).
+it('service owns Pi storage, accepts CLI chat/approvals, executes once, and stops background tasks', { timeout: 120000 }, async () => {
   const temporaryStorage = temporaryData();
   const service = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
     env: { ...process.env, OPENROUTER_API_KEY: '', RAHAT_PI_OFFLINE: '1', RAHAT_PI_DATA_DIR: temporaryStorage.dataDir, RAHAT_PI_NOW: '', RAHAT_PI_CRASH_AT: '', RAHAT_PI_COMPACT_AT_TOKENS: '8000' }, stdio: ['ignore', 'pipe', 'pipe'],

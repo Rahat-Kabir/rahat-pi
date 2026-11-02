@@ -10,7 +10,11 @@ describe('compaction SIGKILL recovery', () => {
     'retains every original entry and places one summary after %s and repeated restarts',
     async crashPoint => {
       const temporaryStorage = temporaryData();
-      const overrides = { RAHAT_PI_COMPACT_AT_TOKENS: '8000' };
+      // The final chats sit at the compaction threshold: a mid-turn blocking summary
+      // may or may not fire depending on transcript ids and timestamps. This test is
+      // about crash recovery, not the run cap, so it leaves the run budget headroom
+      // (the token-cap tests pin the shared 64000 default themselves).
+      const overrides = { RAHAT_PI_COMPACT_AT_TOKENS: '8000', RAHAT_PI_MAX_RUN_TOKENS: '96000' };
       try {
         const originalApp = await App.open(offlineConfig(temporaryStorage.dataDir, overrides));
         await originalApp.dispatch({ name: 'chat', message: 'The launch codename is ORCHID.' });

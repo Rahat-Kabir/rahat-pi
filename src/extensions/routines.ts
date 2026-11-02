@@ -27,6 +27,25 @@ export function dueOccurrence(routine: Routine, now: number): number | null {
   return routine.missedRunPolicy === 'skip' && now - latestOccurrenceTime >= 60000 ? null : latestOccurrenceTime;
 }
 type RoutineCheckpoint = { phase: 'wait' } | { phase: 'deliver'; runId: string; prompt: string };
+
+// A run that builds on the last one starts from its report (capped), and a run with
+// nothing to say answers exactly "Nothing new" on its last line, which stores no report.
+const maximumReportCharacters = 2000;
+export function composeBriefingPrompt(routine: Pick<Routine, 'prompt' | 'lastReport'>) {
+  if (!routine.lastReport) {
+    return routine.prompt;
+  }
+  return `Previous run's report (may be outdated):\n${routine.lastReport}\n\n${routine.prompt}`
+    + '\n\nIf nothing changed since the last report, reply with exactly: Nothing new';
+}
+export function captureRoutineReport(answerText: string): string | null {
+  const lastLine = answerText.trimEnd().split('\n').findLast(line => line.trim() !== '')?.trim();
+  if (lastLine === 'Nothing new') {
+    return null;
+  }
+  return answerText.trim().slice(0, maximumReportCharacters) || null;
+}
+
 export const BriefingTask = defineTask<{ routineId: string }, RoutineCheckpoint, null>({
   name: 'rahat.daily-briefing', version: 1, initial: () => ({ phase: 'wait' }),
   phases: {
@@ -57,7 +76,7 @@ export const BriefingTask = defineTask<{ routineId: string }, RoutineCheckpoint,
           return { status: 'sleeping', until: currentRoutine.nextRunAt, checkpoint: { phase: 'wait' } };
         }
         state.routineRuns[runId] = { id: runId, routineId: currentRoutine.id, occurrenceTime, status: 'running', submissionId: null };
-        return { status: 'running', checkpoint: { phase: 'deliver', runId, prompt: currentRoutine.prompt } };
+        return { status: 'running', checkpoint: { phase: 'deliver', runId, prompt: composeBriefingPrompt(currentRoutine) } };
       }, context);
       // A restart must resume this claim instead of admitting another occurrence.
       crashAt('routine_claimed');
@@ -83,6 +102,16 @@ export const BriefingTask = defineTask<{ routineId: string }, RoutineCheckpoint,
         const routineRun = state.routineRuns[runId];
         routineRun.submissionId = submission.id;
         routineRun.status = settledSubmission.status === 'done' ? 'succeeded' : 'failed';
+        if (routineRun.status === 'succeeded' && settledSubmission.answer !== undefined) {
+          const answerEntry = await transaction.entry(settledSubmission.answer);
+          const answerText = answerEntry?.model?.flatMap(message =>
+            message.role === 'assistant'
+              ? message.content.filter(block => block.type === 'text').map(block => block.text)
+              : []
+          ).join('') ?? '';
+          // Same commit as the run status, so a replay cannot capture a different report.
+          state.routines[routineRun.routineId].lastReport = captureRoutineReport(answerText);
+        }
         await addNotification(
           transaction,
           notificationTexts.routineFinished(runId, state.routines[routineRun.routineId].name, routineRun.status === 'succeeded'),
@@ -111,6 +140,7 @@ export const BriefingTask = defineTask<{ routineId: string }, RoutineCheckpoint,
 export async function createRoutine(
   transaction: Tx,
   conversationId: ConversationId,
+  botId: string,
   routineId: string,
   options: { name: string; prompt: string; time: string; missedRunPolicy: 'skip' | 'catchUpOnce' },
   now: number,
@@ -127,6 +157,6 @@ export async function createRoutine(
     { ownership: { kind: 'conversation' }, conversationId, background: true },
   );
   // The routine keeps its timezone, so changing RAHAT_PI_TIMEZONE later does not move it.
-  state.routines[routineId] = { id: routineId, ...options, timezone, nextRunAt, enabled: true, deleted: false, taskId };
+  state.routines[routineId] = { id: routineId, botId, ...options, timezone, nextRunAt, enabled: true, deleted: false, taskId, lastReport: null };
   return state.routines[routineId];
 }

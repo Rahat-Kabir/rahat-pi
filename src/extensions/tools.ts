@@ -4,6 +4,7 @@ import { AppDoc, type Action } from '../harness/state.js';
 import { proposeAction } from '../executor/actions.js';
 import { addNotification, notificationTexts } from '../harness/notifications.js';
 import { createRoutine } from './routines.js';
+import { resolveRoutineBot } from '../harness/bots.js';
 import type { CalendarAdapter } from './calendar.js';
 import { MemoryIndex } from './memory.js';
 import { crashAt } from '../config.js';
@@ -125,23 +126,34 @@ export function buildTools(memoryIndex: MemoryIndex, calendar: CalendarAdapter, 
     }),
     defineTool({
       name: 'routine_create',
-      description: `Create a daily briefing at HH:mm in ${timezone}.`,
+      description: `Create a daily briefing at HH:mm in ${timezone}. It runs in this bot's chat; `
+        + 'name another bot with "bot" to schedule it there instead. '
+        + 'Each run starts from the previous run\'s report unless it answered "Nothing new".',
       parameters: Type.Object({
         name: Type.String(),
         prompt: Type.String(),
         time: Type.String(),
         missedRunPolicy: Type.Union([Type.Literal('skip'), Type.Literal('catchUpOnce')]),
+        bot: Type.Optional(Type.String({ minLength: 1, maxLength: 40 })),
       }),
       replay: 'safe',
       execute: async (toolArguments, toolRuntime, context) => toolResult(await toolRuntime.commit(
-        async transaction => JSON.parse(JSON.stringify(await createRoutine(
-          transaction,
-          toolRuntime.conversationId,
-          String(toolRuntime.taskId),
-          toolArguments,
-          toolRuntime.now(),
-          timezone,
-        ))),
+        async transaction => {
+          // The routine belongs to the named bot (scheduling for others) or to the bot
+          // whose chat is creating it; the briefing reports into that bot's conversation.
+          const targetBot = await resolveRoutineBot(transaction, toolRuntime.conversationId, toolArguments.bot);
+          // Only the declared fields are stored; the "bot" argument resolved into botId above.
+          const { name, prompt, time, missedRunPolicy } = toolArguments;
+          return JSON.parse(JSON.stringify(await createRoutine(
+            transaction,
+            targetBot.conversationId,
+            targetBot.botId,
+            String(toolRuntime.taskId),
+            { name, prompt, time, missedRunPolicy },
+            toolRuntime.now(),
+            timezone,
+          )));
+        },
         context,
       )),
     }),

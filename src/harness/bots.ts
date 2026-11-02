@@ -43,6 +43,12 @@ export async function createBotRecord(
   now: number,
   agent: { model: ModelRef; tools: ToolRegistration[] },
 ): Promise<Bot> {
+  // Names target routines ("schedule it for Coder"), so live bots need distinct names;
+  // a deleted bot's name is free again.
+  const bots = (await transaction.doc(BotsDoc)).bots;
+  if (Object.values(bots).some(bot => !bot.deleted && bot.name === name)) {
+    throw new Error('Bot name already in use');
+  }
   const conversation = await transaction.createConversation({ ownership: { kind: 'ownerless' } });
   await configure(transaction, conversation.id, agent);
   const bot: Bot = { id: randomUUID(), name, conversationId: conversation.id, createdAt: now, deleted: false };
@@ -67,4 +73,41 @@ export async function reconfigureBots(
     const conversation = await harness.conversation(bot.conversationId as ConversationId, context);
     await conversation?.configure(agent, context);
   }
+}
+
+// The default bot comes first, then the others by creation time; deleted bots drop out.
+export function sortBots(bots: Bot[]) {
+  return [...bots].sort((first, second) => {
+    if (first.id === defaultBotId || second.id === defaultBotId) {
+      return first.id === defaultBotId ? -1 : 1;
+    }
+    return first.createdAt - second.createdAt;
+  });
+}
+
+// A routine's conversation, resolved from the registry inside the same commit that
+// (re)creates its task. An absent botId is the default bot; a deleted bot throws.
+export async function botConversationId(transaction: Tx, botId: string | undefined): Promise<ConversationId> {
+  const bot = (await transaction.doc(BotsDoc)).bots[botId ?? defaultBotId];
+  if (!bot || bot.deleted) {
+    throw new Error('Bot not found');
+  }
+  return bot.conversationId as ConversationId;
+}
+
+// The bot a new routine belongs to: the named one (a Chief may schedule for others),
+// else the bot whose chat is creating it. The task reports into that bot's conversation.
+export async function resolveRoutineBot(
+  transaction: Tx,
+  currentConversationId: ConversationId,
+  requestedBotName: string | undefined,
+): Promise<{ botId: string; conversationId: ConversationId }> {
+  const liveBots = sortBots(Object.values((await transaction.doc(BotsDoc)).bots).filter(bot => !bot.deleted));
+  const bot = requestedBotName !== undefined
+    ? liveBots.find(candidate => candidate.name === requestedBotName)
+    : liveBots.find(candidate => candidate.conversationId === currentConversationId) ?? liveBots[0];
+  if (!bot) {
+    throw new Error(requestedBotName === undefined ? 'No live bot found' : `No bot named "${requestedBotName}"`);
+  }
+  return { botId: bot.id, conversationId: bot.conversationId as ConversationId };
 }

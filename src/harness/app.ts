@@ -11,7 +11,7 @@ import { omitUnansweredTurns } from './conversation-context.js';
 import { initializeCosts } from './costs.js';
 import { readStats } from './stats.js';
 import { AppDoc, type RoutineRun } from './state.js';
-import { BotsDoc, createBotRecord, defaultBotId, ensureDefaultBot, reconfigureBots, type Bot } from './bots.js';
+import { BotsDoc, botConversationId, createBotRecord, defaultBotId, defaultBotName, ensureDefaultBot, reconfigureBots, sortBots, type Bot } from './bots.js';
 import { buildModels, capModelOutput, budgetCompactionModels } from './models.js';
 import { type Config, crashAt } from '../config.js';
 import { MemoryIndex } from '../extensions/memory.js';
@@ -496,6 +496,7 @@ export class App {
   async listRoutines() {
     const state = await this.harness.snapshot(AppDoc, context);
     const routineRuns = Object.values(state?.routineRuns ?? {});
+    const botNameById = new Map((await this.listBots()).map(bot => [bot.id, bot.name]));
     return Object.values(state?.routines ?? {})
       .filter(routine => !routine.deleted)
       .sort((first, second) => first.time.localeCompare(second.time) || first.name.localeCompare(second.name))
@@ -504,7 +505,7 @@ export class App {
           .filter(routineRun => routineRun.routineId === routine.id)
           .reduce<RoutineRun | null>((latest, routineRun) =>
             latest && latest.occurrenceTime > routineRun.occurrenceTime ? latest : routineRun, null);
-        return { ...routine, lastRun };
+        return { ...routine, botName: botNameById.get(routine.botId ?? defaultBotId) ?? defaultBotName, lastRun };
       });
   }
   // The watchdog then stops the routine's sleeping task. Deleting keeps the record and its runs for audit.
@@ -543,7 +544,8 @@ export class App {
       pausedRoutine.taskId = await transaction.createTask(
         BriefingTask,
         { routineId: id },
-        { ownership: { kind: 'conversation' }, conversationId: this.root.id, background: true },
+        // The routine keeps reporting into its own bot's conversation, not the root.
+        { ownership: { kind: 'conversation' }, conversationId: await botConversationId(transaction, pausedRoutine.botId), background: true },
       );
       return { id, status: 'active' as const };
     }, context);
@@ -553,19 +555,22 @@ export class App {
   // The default bot comes first, then the others by creation time.
   async listBots(): Promise<Bot[]> {
     const bots = Object.values((await this.harness.snapshot(BotsDoc, context))?.bots ?? {}).filter(bot => !bot.deleted);
-    return bots.sort((first, second) => {
-      if (first.id === defaultBotId || second.id === defaultBotId) {
-        return first.id === defaultBotId ? -1 : 1;
-      }
-      return first.createdAt - second.createdAt;
-    });
+    return sortBots(bots);
   }
   private async createBot(botName: string): Promise<Bot> {
     const name = botName.trim();
     if (!name || name.length > 40) {
       throw new Error('Bot name must be 1 to 40 characters');
     }
-    return this.harness.commit(transaction => createBotRecord(transaction, name, this.config.now(), this.agentOptions), context);
+    return this.harness.commit(async transaction => {
+      // Names route routine_create's "bot" parameter, so two live bots may not share one.
+      // The check shares the creation commit; a deleted bot frees its name.
+      const bots = Object.values((await transaction.doc(BotsDoc)).bots).filter(bot => !bot.deleted);
+      if (bots.some(bot => bot.name === name)) {
+        throw new Error('Bot name already in use');
+      }
+      return await createBotRecord(transaction, name, this.config.now(), this.agentOptions);
+    }, context);
   }
   // Deleting keeps the conversation history in storage for audit, the way routine deletion does.
   private async deleteBot(id: string) {
@@ -587,6 +592,15 @@ export class App {
         throw new Error('Bot not found');
       }
       bots[id].deleted = true;
+      // The bot's routines stop with it: nothing may report into a conversation that
+      // no live bot owns. The watchdog then stops their sleeping tasks.
+      const appState = await transaction.doc(AppDoc);
+      for (const routine of Object.values(appState.routines)) {
+        if ((routine.botId ?? defaultBotId) === id && !routine.deleted) {
+          routine.enabled = false;
+          routine.deleted = true;
+        }
+      }
       return { id, status: 'deleted' as const };
     }, context);
   }
@@ -764,7 +778,8 @@ export class App {
           state.routines[routine.id].taskId = await transaction.createTask(
             BriefingTask,
             { routineId: routine.id },
-            { ownership: { kind: 'conversation' }, conversationId: this.root.id, background: true },
+            // The routine keeps reporting into its own bot's conversation, not the root.
+            { ownership: { kind: 'conversation' }, conversationId: await botConversationId(transaction, state.routines[routine.id].botId), background: true },
           );
         }, context);
       }

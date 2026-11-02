@@ -490,6 +490,13 @@ describe('local web UI', () => {
       });
       const untouchedState = await readState(fixture.baseUrl, fixture.token);
       expect(JSON.stringify(untouchedState.entries)).not.toContain('hello bot over http');
+      // A routine created for that bot carries the bot's name to the app.
+      await fixture.app.dispatch({
+        name: 'chat',
+        message: toolMessage('routine_create', { name: 'Web routine', prompt: 'P', time: '07:00', missedRunPolicy: 'skip', bot: 'Web Bot' }),
+      });
+      const withRoutine = await readState(fixture.baseUrl, fixture.token);
+      expect(withRoutine.routines).toMatchObject([{ name: 'Web routine', botName: 'Web Bot' }]);
       // Unknown bots are refused on every route that names one.
       for (const request of [
         fetch(`${fixture.baseUrl}/api/state?bot=missing`, { headers: { 'X-Rahat-Token': fixture.token } }),

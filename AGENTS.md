@@ -52,9 +52,9 @@ Safe crash recovery and trustworthy approvals are the main constraint.
 - Action lifecycle: proposed → approved → executing → succeeded | failed | unknown.
 - A bot is a record in `rahat.bots` plus its own ownerless conversation, never a
   process. The root is adopted once as the default bot (`main`) and cannot be
-  deleted; deleting another bot aborts its conversation and keeps history. Bots
-  share persona, model, tools, memory, workspace, and USD caps; only the
-  conversation is per-bot.
+  deleted; deleting another bot aborts its conversation, keeps history, and
+  disables its routines. Bots share persona, model, tools, memory, workspace, and
+  USD caps; the conversation and its routines are per-bot.
 
 ### Key Decisions
 

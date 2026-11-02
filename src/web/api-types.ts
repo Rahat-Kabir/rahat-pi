@@ -60,8 +60,8 @@ export type Memory = {
 };
 
 // A daily routine, earliest time of day first: at `time` (HH:mm) in its own fixed-offset
-// `timezone`, the agent receives `prompt`. `nextRunAt` is not meaningful while paused.
-// Treat name and prompt as untrusted text.
+// `timezone`, the agent receives `prompt` in `botName`'s chat. `nextRunAt` is not
+// meaningful while paused. Treat name and prompt as untrusted text.
 export type RoutineRun = { occurrenceTime: number; status: 'running' | 'succeeded' | 'failed' };
 export type Routine = {
   id: string;
@@ -71,6 +71,7 @@ export type Routine = {
   timezone: string;
   enabled: boolean;
   nextRunAt: number;
+  botName: string;
   lastRun: RoutineRun | null;
 };
 

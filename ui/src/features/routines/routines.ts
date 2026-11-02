@@ -7,9 +7,10 @@ function formatTime(timestamp: number, timezone: string, locale?: string) {
   return new Date(timestamp).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short', timeZone: timezone });
 }
 
-// The schedule as the brain stores it: a time of day in the routine's own timezone.
+// The schedule as the brain stores it: a time of day in the routine's own timezone,
+// in the bot whose chat the routine reports into.
 export function routineSchedule(routine: Routine) {
-  return `Daily at ${routine.time} (${routine.timezone})`;
+  return `Daily at ${routine.time} (${routine.timezone}) · in ${routine.botName}`;
 }
 
 // A paused routine's stored next run is stale, so it is not shown.

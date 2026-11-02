@@ -7,7 +7,8 @@ async function actionId(dataDir: string): Promise<string> {
   const actions = jsonOutput(await cli(dataDir, ['actions'])) as Action[];
   return actions[0].id;
 }
-describe('SIGKILL and real-process restart demos', () => {
+// Each demo spawns services and CLI processes and SIGKILLs them; 30 s per test is tight on a busy machine.
+describe('SIGKILL and real-process restart demos', { timeout: 120000 }, () => {
   it('Demo 1 PASS: a preference is remembered after a restart', async () => {
     const temporaryStorage = temporaryData();
     try {

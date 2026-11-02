@@ -22,12 +22,14 @@ describe('stopped task health', () => {
     try {
       const record = await routineTaskRecord(app);
       const routines = (await app.harness.snapshot(AppDoc, context))!.routines;
+      const bot = await app.dispatch({ name: 'createBot', botName: 'Coder' }) as { conversationId: number };
       const bots = await app.listBots();
       const botByConversation = new Map(bots.map(bot => [bot.conversationId, bot]));
       const describe = (changes: object, liveTools: { callId: string; name: string }[] = []) =>
         describeTask(blocked({ ...record, ...changes } as TaskInspection['record'], 'restart_limit'), routines, liveTools, botByConversation);
       expect(describe({})).toBe('Routine "Daily briefing"');
       expect(describe({ input: { routineId: 'deleted' } })).toBe('Routine');
+      expect(describe({ conversationId: bot.conversationId })).toBe('Routine "Daily briefing" (Coder)');
       expect(describe({ kind: 'pi.generation', conversationId: app.root.id })).toBe('Chat answer');
       expect(describe({ kind: 'pi.generation', conversationId: 999999 })).toBe('Helper answer');
       expect(describe({ kind: 'pi.compaction' })).toBe('Chat summary');

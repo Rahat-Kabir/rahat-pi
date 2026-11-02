@@ -10,12 +10,14 @@ const routine: Routine = {
   timezone: 'Etc/GMT-6',
   enabled: true,
   nextRunAt: Date.UTC(2026, 9, 25, 2, 0),
+  botName: 'Rahat-PI',
   lastRun: null,
 };
 
 describe('routines', () => {
-  it('describes the schedule in the routine timezone', () => {
-    expect(routineSchedule(routine)).toBe('Daily at 08:00 (Etc/GMT-6)');
+  it('describes the schedule in the routine timezone and names its bot', () => {
+    expect(routineSchedule(routine)).toBe('Daily at 08:00 (Etc/GMT-6) · in Rahat-PI');
+    expect(routineSchedule({ ...routine, botName: 'Researcher' })).toBe('Daily at 08:00 (Etc/GMT-6) · in Researcher');
   });
 
   it('shows the next run only while the routine is on', () => {

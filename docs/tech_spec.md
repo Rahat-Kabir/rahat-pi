@@ -99,10 +99,31 @@ forgotten fact. This is deliberately small-scale for now.
 task. Its wait phase commits `sleepUntil(nextRunAt)` and holds no invocation while
 sleeping. The next phase claims a unique `routineId:occurrenceTime` record and
 advances nextRunAt in the same commit. Its delivery checkpoint submits the prompt
-to the main conversation using the occurrence ID as Pi `requestId`, then waits for
-that submission. A crash after claim or admission resumes the same checkpoint;
-submission deduplication prevents a second briefing. Results stay in the main
+to the task's owning conversation using the occurrence ID as Pi `requestId`, then
+waits for that submission. A crash after claim or admission resumes the same checkpoint;
+submission deduplication prevents a second briefing. Results stay in that
 conversation and RoutineRun records status plus submission ID.
+
+Each routine belongs to one bot (`botId`, absent = the default bot). The
+`routine_create` tool resolves the target inside its commit: the bot named by the
+optional `bot` parameter (validated against the registry), else the bot whose chat
+is creating it; the task is owned by that bot's conversation, so the briefing
+reports into that bot's chat. Live bots have distinct names — creating a duplicate
+is refused, and deleting a bot frees its name — so the lookup is unambiguous.
+`resumeRoutine` and `startBackground` resolve the
+conversation back from the registry (`botConversationId`), so a recreated task keeps
+reporting into the right bot after restart or pause/resume. Deleting a bot disables
+its routines in the same commit as the bot tombstone; the watchdog stops their
+sleeping tasks.
+
+Each run starts from the previous run's report (`composeBriefingPrompt`): the stored
+`lastReport`, capped at 2,000 characters, is prepended with an instruction to answer
+exactly "Nothing new" on the last line when nothing changed. The deliver commit
+reads the settled answer's text and stores `captureRoutineReport`'s result on the
+routine in the same commit as the run status; a last line of exactly "Nothing new"
+stores `null`, so the next run starts fresh. `listRoutines` joins each routine with
+its bot's name for the app; a stopped briefing task in a non-default bot is labeled
+`Routine "<name>" (<bot>)`.
 
 Schedules are daily HH:mm in the routine's stored timezone (from `RAHAT_PI_TIMEZONE`; fixed offset, no DST).
 `catchUpOnce` selects only the latest due occurrence, not every missed day.
