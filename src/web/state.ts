@@ -20,7 +20,7 @@ export async function readWebState(app: App, conversationView: ConversationView)
     subagents: await app.listSubagents(),
     memories: await app.listMemories(),
     routines: await app.listRoutines(),
-    bots: (await app.listBots()).map(bot => ({ id: bot.id, name: bot.name, createdAt: bot.createdAt })),
+    bots: (await app.listBots()).map(bot => ({ id: bot.id, name: bot.name, createdAt: bot.createdAt, persona: bot.persona, model: bot.modelRole ?? 'main' })),
     stoppedTasks: await app.stoppedTasks(),
     stats: await app.stats(),
   };

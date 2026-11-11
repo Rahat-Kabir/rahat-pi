@@ -96,9 +96,13 @@ program.command('bots').description('List bots; each has its own conversation').
 });
 // Grouped under `bot` so a bare `create <name>` is never mistaken for creating something else.
 const botCommand = program.command('bot').description('Create or delete a bot');
-botCommand.command('create <name>').description('Create a bot with its own conversation').action(async botName => {
-  console.log(JSON.stringify(await invoke({ name: 'createBot', botName }), null, 2));
-});
+botCommand.command('create <name>')
+  .description('Create a bot with its own conversation, an optional --persona, and --model main|helper')
+  .option('--persona <persona>', 'who the bot is and how it speaks')
+  .option('--model <model>', 'which configured model the bot runs: main or helper')
+  .action(async (botName: string, options: { persona?: string; model?: string }) => {
+    console.log(JSON.stringify(await invoke({ name: 'createBot', botName, persona: options.persona, model: options.model }), null, 2));
+  });
 botCommand.command('delete <id>').description('Delete a bot; its conversation history stays stored').action(async botId => {
   console.log(JSON.stringify(await invoke({ name: 'deleteBot', id: botId }), null, 2));
 });

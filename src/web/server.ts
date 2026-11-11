@@ -293,7 +293,14 @@ export async function startWebServer(app: App, port = app.config.webPort, appDir
     }
     if (path === '/api/bots') {
       const name = requireString(body, 'name', 40);
-      const bot = await app.dispatch({ name: 'createBot', botName: name }) as { id: string; name: string };
+      // An absent or blank persona means none; a present one must be real text.
+      const persona = typeof body.persona === 'string' && body.persona.trim()
+        ? requireString(body, 'persona', 2000)
+        : undefined;
+      if (body.model !== undefined && body.model !== 'main' && body.model !== 'helper') {
+        throw new HttpError(400, 'Invalid model');
+      }
+      const bot = await app.dispatch({ name: 'createBot', botName: name, persona, model: body.model }) as { id: string; name: string };
       sendJson(response, 200, { id: bot.id, name: bot.name });
       return;
     }

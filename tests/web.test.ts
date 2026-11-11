@@ -474,12 +474,15 @@ describe('local web UI', () => {
   it('serves each bot its own conversation and refuses unknown bots', async () => {
     const fixture = await webFixture();
     try {
-      const created = await post(fixture.baseUrl, fixture.token, '/api/bots', { name: 'Web Bot' });
+      const created = await post(fixture.baseUrl, fixture.token, '/api/bots', { name: 'Web Bot', persona: 'Speaks briefly.', model: 'helper' });
       expect(created.status).toBe(200);
       const bot = await created.json() as { id: string; name: string };
       expect(bot).toEqual({ id: expect.any(String), name: 'Web Bot' });
       const defaultState = await readState(fixture.baseUrl, fixture.token);
       expect(defaultState.bots.map((each) => each.name)).toEqual(['Rahat-PI', 'Web Bot']);
+      // The state carries each bot's persona and model; the default bot runs main.
+      expect(defaultState.bots[0]).toMatchObject({ model: 'main' });
+      expect(defaultState.bots[1]).toMatchObject({ persona: 'Speaks briefly.', model: 'helper' });
       expect(defaultState.entries).toHaveLength(0);
       // A message names its bot, and only that bot's state shows it.
       const admitted = await post(fixture.baseUrl, fixture.token, '/api/messages', { message: 'hello bot over http', botId: bot.id });
@@ -506,6 +509,8 @@ describe('local web UI', () => {
         expect((await request).status).toBe(409);
       }
       expect((await post(fixture.baseUrl, fixture.token, '/api/bots', { name: ' ' })).status).toBe(400);
+      expect((await post(fixture.baseUrl, fixture.token, '/api/bots', { name: 'Bad Model', model: 'turbo' })).status).toBe(400);
+      expect((await post(fixture.baseUrl, fixture.token, '/api/bots', { name: 'Chatty', persona: 'x'.repeat(2001) })).status).toBe(400);
     } finally {
       await fixture.cleanup();
     }

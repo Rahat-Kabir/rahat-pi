@@ -35,17 +35,24 @@ Background: [Pi Durable announcement](https://earendil.com/posts/pi-durable/).
 
 ## Bots
 
-`src/harness/bots.ts` keeps `rahat.bots` (session doc): `{id, name, conversationId,
-createdAt, deleted}`. A bot is a record plus its own ownerless Pi conversation, never
-a process; creation is one commit that makes the conversation, configures the same
-agent the root has, and writes the record, so a bot never exists half-made. On reopen
-every non-deleted bot is reconfigured with the root's current agent, so a model or
-tool change reaches bots created earlier. The
+`src/harness/bots.ts` keeps `rahat.bots` (session doc, version 2): `{id, name,
+conversationId, createdAt, deleted, persona?, modelRole?}`. A bot is a record plus
+its own ownerless Pi conversation, never a process; creation is one commit that makes
+the conversation, configures its agent, and writes the record, so a bot never exists
+half-made. A bot stores a model role, not a slug: `main` (the root's model) or
+`helper` (the configured subagent model). On reopen every non-deleted bot is
+reconfigured with the current tools and its own role's model, so a config change
+reaches bots created earlier without moving a bot off its role. Compaction policies
+are enabled per model id, so both roles' models get one at open; a threshold above
+either context window fails at startup. The
 default bot (`main`, named Rahat-PI) adopts the root conversation once on first open
 and cannot be deleted. Deletion tombstones the record after aborting the bot's
 conversation; history stays in storage, like routine deletion. Names are 1–40
-characters. All bots share the persona, model, tools, and memory in this slice; the
-shared daily/lifetime USD caps cover every bot's runs.
+characters, personas 0–2000. Each bot's profile section resolves the bot from its
+conversation and renders its persona after the identity line; the safety rules are
+the same for every bot, so a persona adds character but cannot weaken them. Bots
+share tools, memory, and workspace; the shared daily/lifetime USD caps cover every
+bot's runs.
 
 `App.submitMessage(message, whenBusy, requestId?, botId?)` resolves the conversation
 from the registry (root when no bot is named) and submits through the same guards.
@@ -60,9 +67,10 @@ Web: `GET /api/state?bot=<id>` and `/api/events?bot=<id>` serve that bot's trans
 conversation view per bot when a client first selects it, so frames carry the selected
 bot's transcript only; the registry is checked on every read, and view creation is
 single-flight; the `rahat.bots` doc watch updates every switcher. `POST
-/api/messages` accepts an optional `botId`; `POST /api/bots` `{name}` creates one.
-The app shows a bot switcher above the chat and reconnects its event stream to the
-selected bot. CLI: `bots` lists, `bot create <name>` and `bot delete <id>` change the
+/api/messages` accepts an optional `botId`; `POST /api/bots`
+`{name, persona?, model?}` creates one. The app shows a bot switcher above the chat
+and reconnects its event stream to the selected bot. CLI: `bots` lists, `bot create
+<name> [--persona <text>] [--model main|helper]` and `bot delete <id>` change the
 registry; CLI `chat` stays on the default bot. A deleted bot's id is refused
 everywhere, including a web view cached before deletion, and the app falls back to
 the default bot.
@@ -769,8 +777,8 @@ OAuth consent, credential storage, scopes, and API integration remain future wor
 
 - A single session document with keyed records replaces separate Pi document families;
   there are no separate Space/Connector records. The only space is implicitly personal.
-- Bots share one persona, model, tool set, memory, and workspace; only the conversation
-  is per-bot. Per-bot routines, models, and memory scopes are future work. Two busy
+- Bots share one tool set, memory, and workspace; only the conversation, persona, and
+  model role are per-bot. Per-bot memory scopes are future work. Two busy
   bots can use the shared workspace at once: same-file writes race (last write wins).
 - A daily HH:mm schedule replaces generic cron; only fixed-offset timezones (no DST) are supported.
   Deleted routines retain tombstones/audit history. Only the owner can resume a paused routine.

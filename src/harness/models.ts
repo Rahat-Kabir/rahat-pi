@@ -3,6 +3,7 @@ import { openrouterProvider } from '@earendil-works/pi-ai/providers/openrouter';
 import { fauxAssistantMessage } from '@earendil-works/pi-ai/providers/faux';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
 import type { Model, Context as ModelContext } from '@earendil-works/pi-ai';
+import type { ModelRef } from '@earendil-works/pi-durable';
 import type { DispatchAccounting } from './costs.js';
 import { createOfflineFauxProvider } from './faux-model.js';
 import { crashAt, type Config } from '../config.js';
@@ -32,6 +33,41 @@ export function buildModels(config: Config) {
     throw new Error(`Unknown OpenRouter summary model in pinned catalog: ${config.summaryModel}`);
   }
   return { models, modelRef: { provider: 'openrouter', modelId: config.model } };
+}
+
+// A bot stores which configured model it uses, not a slug: config stays authoritative
+// (a helper-model change reaches every helper bot on reopen), and each role's model is
+// validated and given a compaction policy at startup, so no bot runs uncompacted.
+export type BotModelRole = 'main' | 'helper';
+
+export function botModelRef(config: Config, mainModelRef: ModelRef, role: BotModelRole): ModelRef {
+  if (config.offline || role === 'main') {
+    return mainModelRef;
+  }
+  return { provider: 'openrouter', modelId: config.subagentModel };
+}
+
+// Compaction is enabled per model id, so every model a bot can run (both roles) needs
+// its own entry, or a bot's context would grow without compaction.
+export function compactionModelOverrides(
+  models: Models,
+  modelRefs: readonly ModelRef[],
+  compactAtTokens: number,
+) {
+  const overrides: Record<string, { enabled: true; reserveTokens: number; keepRecentTokens: number; backgroundTokens: number }> = {};
+  for (const modelRef of modelRefs) {
+    const model = models.getModel(modelRef.provider, modelRef.modelId);
+    if (!model || compactAtTokens >= model.contextWindow) {
+      throw new Error(`RAHAT_PI_COMPACT_AT_TOKENS must be below the ${modelRef.modelId} context window`);
+    }
+    overrides[`${modelRef.provider}/${modelRef.modelId}`] = {
+      enabled: true,
+      reserveTokens: model.contextWindow - compactAtTokens,
+      keepRecentTokens: Math.min(8000, Math.floor(compactAtTokens / 4)),
+      backgroundTokens: 0,
+    };
+  }
+  return overrides;
 }
 
 // A failed settlement must never hang or crash the reply. Recovery is already safe:

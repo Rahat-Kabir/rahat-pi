@@ -75,8 +75,9 @@ export type Routine = {
   lastRun: RoutineRun | null;
 };
 
-// A bot the owner can chat with; the default bot comes first. Treat the name as untrusted text.
-export type Bot = { id: string; name: string; createdAt: number };
+// A bot the owner can chat with; the default bot comes first. Treat the name and
+// persona as untrusted text. `model` is which configured model the bot runs.
+export type Bot = { id: string; name: string; createdAt: number; persona?: string; model: 'main' | 'helper' };
 
 // A task Pi will not run: parked after repeated crashes (`canRetry`), or blocked on
 // missing or unmigratable code. `label` is plain words, for example 'Routine "Daily briefing"'.
@@ -138,7 +139,7 @@ export type MessageRequest = {
 export type MessageResponse = { submissionId: number };
 
 // POST /api/bots → 200 CreateBotResponse; the bot list arrives with the next state frame.
-export type CreateBotRequest = { name: string };
+export type CreateBotRequest = { name: string; persona?: string; model?: 'main' | 'helper' };
 export type CreateBotResponse = { id: string; name: string };
 
 // POST /api/actions → 200 with the updated action; 409 when the payload changed.

@@ -53,11 +53,14 @@ Safe crash recovery and trustworthy approvals are the main constraint.
 - A bot is a record in `rahat.bots` plus its own ownerless conversation, never a
   process. The root is adopted once as the default bot (`main`) and cannot be
   deleted; deleting another bot aborts its conversation, keeps history, and
-  disables its routines. Bots share persona, model, tools, memory, workspace, and
-  USD caps; the conversation and its routines are per-bot.
+  disables its routines. Bots share tools, memory, workspace, and USD caps; the
+  conversation, routines, persona, and model role are per-bot.
 
 ### Key Decisions
 
+- A bot stores a model role (`main` or `helper`), not a model slug: config stays
+  authoritative on reopen, and both roles' models get compaction policies at
+  startup, so no bot can run uncompacted.
 - Budget checks run inside the Models wrapper (`capModelOutput`), before the
   provider is called. Pi 1.4 only reports errors thrown from generation hooks
   and keeps generating, so a hook cannot block a request.

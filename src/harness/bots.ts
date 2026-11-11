@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { configure, defineDoc, type ConversationId, type Harness, type ModelRef, type ToolRegistration, type Tx } from '@earendil-works/pi-durable';
+import type { BotModelRole } from './models.js';
 
 // A bot is a record plus its own conversation, never a process: creating one writes
 // config only, the way the rest of the app shares one harness and one model pool.
@@ -10,13 +11,20 @@ export type Bot = {
   conversationId: number;
   createdAt: number;
   deleted: boolean;
+  // Free text set at creation; a bot without one speaks with the shared profile.
+  persona?: string;
+  // Which configured model the bot runs; a missing role reads as 'main'
+  // (bots created before roles existed).
+  modelRole?: BotModelRole;
 };
 export type BotsState = { bots: Record<string, Bot> };
 export const BotsDoc = defineDoc<BotsState>({
   kind: 'rahat.bots',
-  version: 1,
+  version: 2,
   scope: 'session',
   initial: () => ({ bots: {} }),
+  // v1 records simply lack the optional persona and modelRole.
+  migrate: value => value as BotsState,
   checkpointWhen: () => true,
 });
 
@@ -42,6 +50,8 @@ export async function createBotRecord(
   name: string,
   now: number,
   agent: { model: ModelRef; tools: ToolRegistration[] },
+  persona?: string,
+  modelRole?: BotModelRole,
 ): Promise<Bot> {
   // Names target routines ("schedule it for Coder"), so live bots need distinct names;
   // a deleted bot's name is free again.
@@ -52,16 +62,23 @@ export async function createBotRecord(
   const conversation = await transaction.createConversation({ ownership: { kind: 'ownerless' } });
   await configure(transaction, conversation.id, agent);
   const bot: Bot = { id: randomUUID(), name, conversationId: conversation.id, createdAt: now, deleted: false };
+  if (persona !== undefined) {
+    bot.persona = persona;
+  }
+  if (modelRole !== undefined) {
+    bot.modelRole = modelRole;
+  }
   (await transaction.doc(BotsDoc)).bots[bot.id] = bot;
   return bot;
 }
 
 // Config is authoritative on reopen for bots, the way it is for the root: every bot
-// created earlier is reconfigured with the current agent, so a model or tool change
-// reaches them, too. The default bot's conversation is the root, configured by the caller.
+// created earlier is reconfigured with the current tools and its own role's model, so
+// a model or tool change reaches them, too. The default bot's conversation is the
+// root, configured by the caller.
 export async function reconfigureBots(
   harness: Harness,
-  agent: { model: ModelRef; tools: ToolRegistration[] },
+  agentForBot: (bot: Bot) => { model: ModelRef; tools: ToolRegistration[] },
   rootConversationId: ConversationId,
 ) {
   const state = await harness.snapshot(BotsDoc, context);
@@ -71,7 +88,7 @@ export async function reconfigureBots(
       continue;
     }
     const conversation = await harness.conversation(bot.conversationId as ConversationId, context);
-    await conversation?.configure(agent, context);
+    await conversation?.configure(agentForBot(bot), context);
   }
 }
 
@@ -93,6 +110,14 @@ export async function botConversationId(transaction: Tx, botId: string | undefin
     throw new Error('Bot not found');
   }
   return bot.conversationId as ConversationId;
+}
+
+// The live bot whose chat is being asked for its profile, so each bot can carry its
+// own persona. Subagent children and deleted bots have no record; they fall back to
+// the shared profile.
+export async function liveBotForConversation(harness: Harness, conversationId: ConversationId): Promise<Bot | undefined> {
+  const state = await harness.snapshot(BotsDoc, context);
+  return Object.values(state?.bots ?? {}).find(bot => !bot.deleted && bot.conversationId === conversationId);
 }
 
 // The bot a new routine belongs to: the named one (a Chief may schedule for others),
