@@ -98,7 +98,7 @@ export function BotSwitcher({ bots, selectedId, onSelect }: {
             className="w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
           />
           <div className="flex items-center gap-2">
-            <Button type="submit" disabled={creating || !name.trim()}>{creating ? 'Creating…' : 'Create'}</Button>
+            <Button type="submit" disabled={creating}>{creating ? 'Creating…' : 'Create'}</Button>
             <Button type="button" onClick={() => { setNaming(false); setFeedback(null); }}>Cancel</Button>
           </div>
         </form>
